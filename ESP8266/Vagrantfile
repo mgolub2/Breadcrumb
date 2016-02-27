@@ -66,6 +66,12 @@ Vagrant.configure(2) do |config|
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
      sudo apt-get update
+     sudo apt-get install git -y
+     git clone https://github.com/espressif/ESP8266_RTOS_SDK.git
      sudo apt-get install -y make unrar autoconf automake libtool gcc g++ gperf flex bison texinfo gawk ncurses-dev libexpat-dev python python-serial sed git unzip
+     git clone --recursive https://github.com/pfalcon/esp-open-sdk.git
+     cd esp-open-sdk
+     make
+     echo "export PATH=$(PWD):$PATH" >> ~/.bashrc 
   SHELL
 end
