@@ -29,6 +29,7 @@
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "uart.h"
+#include "udns.h"
 
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 80 
@@ -53,10 +54,18 @@ void uart0_rx_intr_handler (void *para) {
 }
 
 void ICACHE_FLASH_ATTR rx_task(void *pvParameters) {
-	printf("I'm a rx\n");
+	/*printf("I'm a rx\n");
+	while(1) {
+    	int j = 0;
+    	int i;
+    	for (i = 0; i < 100000000; i++) {
+    		j ++;
+    	}
+    	printf("J is L %d\n", j);
+    };*/
 }
 
-void ICACHE_FLASH_ATTR tx_task(void *pvParameters) {
+void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
 	printf("I'm a tx\n");
 	int32 listenfd;
 	int32 ret;
@@ -106,21 +115,26 @@ void ICACHE_FLASH_ATTR tx_task(void *pvParameters) {
 				continue; 
 			}
 			//put this in struct perhaps
-			printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
+			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
 			//How to limit phone to 128 byet packet???
 			char *recv_buf = (char *)zalloc(128); //can this be larger...
 			uint32_t recbytes;
 			while ((recbytes = read(client_sock , recv_buf, 128)) > 0) {
       			recv_buf[recbytes] = 0;
-      			printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);
+      			printf("###%s###", recv_buf);
+      			//printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);
 			}
 			free(recv_buf);
 			if (recbytes <= 0) {
-				printf("ESP8266 TCP server task > read data fail!\n");
+				//printf("ESP8266 TCP server task > read data fail!\n");
 				close(client_sock);
 			}
 		}
 	}
+}
+
+void ICACHE_FLASH_ATTR wifi_udp_dns_task(void *pvParameters) {
+   	//dns ey stuff here
 }
 
 void ICACHE_FLASH_ATTR config_custom_uart0() {
@@ -172,15 +186,17 @@ void configure_wifi() {
 
 void user_init(void)
 {
-	config_custom_uart0();
+	//config_custom_uart0();
+	printf("Configuring WiFi\n");
+	//dns_server_task("4");
 	configure_wifi();
     printf("SDK version:%s\n", system_get_sdk_version());
     //seperate rx and tx tasks? UART INT based for TX?
     while(!wifi_set_opmode(SOFTAP_MODE)){
     	printf("Setting up wifi...");
     };
-    xTaskCreate(rx_task, "rx_task", 512, NULL, 2, NULL);
-    xTaskCreate(tx_task, "tx_task", 512, NULL, 2, NULL);
-    printf("DONE\n");
+    //xTaskCreate(rx_task, "rx_task", 512, NULL, 2, NULL);
+    xTaskCreate(wifi_80_task, "wifi_80_task", 512, NULL, 2, NULL);
+    printf("DONE DONE\n");
 }
 
