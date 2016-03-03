@@ -47,13 +47,14 @@ int get_port(char ip[], char header[17], struct sockaddr_in *dns_udp) {
 	int len_inet;
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	//printf("Created socket\n");
 
 	if(sock == -1) {
-		printf("FAILURE: Could not create DNS socket");
+		printf("FAILURE: Could not create DNS socket\n");
 		//idk what'll happen now. YOLO
 	}
 
-	uint32_t byte_ip = inet_addr(ip);
+	uint32_t byte_ip = ntohl(inet_addr(ip));
 
 	memset(dns_udp,0,sizeof(struct sockaddr_in));
     dns_udp->sin_family = AF_INET;
@@ -62,6 +63,12 @@ int get_port(char ip[], char header[17], struct sockaddr_in *dns_udp) {
 
     set_ip(byte_ip, header);
     len_inet = sizeof(struct sockaddr_in);
+
+    if(bind(sock,(struct sockaddr *)dns_udp,len_inet) == -1) {
+        printf("Bind error!\n");
+    }
+
+    //printf("Returning socket\n");
     return sock;
 }
 
@@ -69,6 +76,7 @@ int get_port(char ip[], char header[17], struct sockaddr_in *dns_udp) {
 Task for FreeRTOS to call and serve tasty DNS on.
 */
 void ICACHE_FLASH_ATTR dns_server_task(void *pvParameters) {
+	printf("Starting DNS server...");
 	char header[17] = "\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x00\x00\x04\x7f\x7f\x7f\x7f";
 	int a, len_inet;
     int sock;
@@ -80,6 +88,7 @@ void ICACHE_FLASH_ATTR dns_server_task(void *pvParameters) {
     sock = get_port("192.168.1.1", header, &dns_udp);
     for(;;) { //same as while 1
     	/* Get data from UDP port 53 */
+    	//printf("Wait for DNS queries");
         len_inet = recvfrom(sock,in,255,0,(struct sockaddr *)&dns_udp,
                 &foo);
         /* Roy Arends check: We only answer questions */
@@ -89,6 +98,7 @@ void ICACHE_FLASH_ATTR dns_server_task(void *pvParameters) {
 
         /* Prepare the reply */
         if(len_inet > 12) {
+        	    //printf("Prep DNS reply...");
                 /* Make this an answer */
                 in[2] |= 0x80;
                 if(in[11] == 0) { /* EDNS not supported */
@@ -103,7 +113,7 @@ void ICACHE_FLASH_ATTR dns_server_task(void *pvParameters) {
                         in[len_inet + a] = header[a];
                 }
         }
-
+        //printf("Send DNS Reply");
         /* Send the reply */
         sendto(sock,in,len_inet + 16,0, (struct sockaddr *)&dns_udp, leni);
     }

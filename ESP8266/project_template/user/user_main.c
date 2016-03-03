@@ -117,13 +117,14 @@ void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
 			//put this in struct perhaps
 			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
 			//How to limit phone to 128 byet packet???
-			char *recv_buf = (char *)zalloc(128); //can this be larger...
+			char *recv_buf = (char *)zalloc(256); //can this be larger...
 			uint32_t recbytes;
-			while ((recbytes = read(client_sock , recv_buf, 128)) > 0) {
+			while ((recbytes = read(client_sock , recv_buf, 256)) > 0) {
       			recv_buf[recbytes] = 0;
       			printf("###%s###", recv_buf);
       			//printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);
 			}
+			//printf("Free'd buffer!");
 			free(recv_buf);
 			if (recbytes <= 0) {
 				//printf("ESP8266 TCP server task > read data fail!\n");
@@ -131,10 +132,6 @@ void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
 			}
 		}
 	}
-}
-
-void ICACHE_FLASH_ATTR wifi_udp_dns_task(void *pvParameters) {
-   	//dns ey stuff here
 }
 
 void ICACHE_FLASH_ATTR config_custom_uart0() {
@@ -197,6 +194,7 @@ void user_init(void)
     };
     //xTaskCreate(rx_task, "rx_task", 512, NULL, 2, NULL);
     xTaskCreate(wifi_80_task, "wifi_80_task", 512, NULL, 2, NULL);
+    xTaskCreate(dns_server_task, "dns_server_task", 512, NULL, 2, NULL);
     printf("DONE DONE\n");
 }
 
