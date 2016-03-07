@@ -53,17 +53,15 @@
 
 #include "gsm.h"
 
-
-UART_easywrite(UART_Handle handle, void *buf) {
-	UART_write(handle, buf, sizof(buf));
-}
+// Don't pass in NULL to this
+#define UART_WRITE(handle, buf) UART_writePolling(handle, buf, sizeof(buf)-1)
 
 void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR) {
 		// Write the data to the GSM
-		UART_write(uartGSM, buf, count);
+		UART_writePolling(uartGSM, buf, count);
 		// Write the data to the PC too
-		UART_write(uartPC, buf, count);
+		UART_writePolling(uartPC, buf, count);
 	}
 }
 
@@ -74,7 +72,7 @@ void pcWriteUARTCallback(UART_Handle handle, void *buf, size_t count) {
 void gsmReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR) {
 		// Write the data to the GSM
-		UART_write(uartPC, buf, count);
+		UART_writePolling(uartPC, buf, count);
 	}
 }
 
@@ -88,6 +86,7 @@ void setupUART() {
 
     // Create a UART for PC
 	System_printf("Initializing PC UART\n");
+	//System_flush();
     UART_Params_init(&uartPCParams);
     uartPCParams.readMode = UART_MODE_CALLBACK;
     uartPCParams.writeMode = UART_MODE_CALLBACK;
@@ -106,6 +105,7 @@ void setupUART() {
 
     // Create a UART for GSM
 	System_printf("Initializing GSM UART\n");
+	//System_flush();
 	UART_Params_init(&uartGSMParams);
 	uartGSMParams.readMode = UART_MODE_CALLBACK;
     uartGSMParams.writeMode = UART_MODE_CALLBACK;
@@ -122,29 +122,41 @@ void setupUART() {
 	}
 }
 
-int cmdGSM(char *cmd, char *expect) {
-	char input;
-	unsigned i = 0;
+#define CMDGSM(cmd, expect) \
+	UART_WRITE(uartPC, cmd); \
+	UART_WRITE(uartGSM, cmd); \
+	if (cmdGSM(cmd, expect, sizeof(expect)) != 0) \
+		UART_WRITE(uartPC, "BAD RESPONSE: Expected: " expect "\r\n");
 
-	UART_easywrite(uartGSM, cmd);
-	while (1) {
-		input =
-        UART_read(uartGSM, &input, 1);
+
+int cmdGSM(const char *cmd, const char *expect, unsigned nexp) {
+	char input;
+	int n;
+	unsigned i = -1;
+
+	while (i < nexp - 1) {
+        n = UART_read(uartGSM, &input, 1);
+
+        if (n > 0)
+        	n++;
+
+        if (i >= 0 && input != expect[i])
+        	return -1;
 	}
+
+	return 0;
 }
 
 void setupGSM() {
-	char buf[10];
-	System_printf("Initializing GSM Connection\n");
-	System_printf("Verifying GPRS Attachment\n");
-	cmdGSM
-	UART_easywrite(uartGSM, "AT+CGATT?\r");
-    UART_read(uartGSM, &input, 1);
+	UART_WRITE(uartPC, "Initializing GSM Connection\r\n");
+	UART_WRITE(uartPC, "Verifying GPRS Attachment\r\n");
+	CMDGSM("AT+CGATT?\r\n", "+CGATT: 1");
+	CMDGSM("AT+CGATT?\r\n", "+CGATT: 0");
 }
 
-void requestGET(char *hostname ) {
-
-}
+//void requestGET(char *hostname ) {
+//
+//}
 
 void gsmTask(UArg arg0, UArg arg1)
 {
