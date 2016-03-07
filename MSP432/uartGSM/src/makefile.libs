@@ -1,6 +1,6 @@
 #
 # This file was generated based on the configuration script:
-#     /home/david/ccs_workspace/uartGSM/uartecho.cfg
+#     /home/david/uw/ee475/Breadcrumb/MSP432/uartGSM/uartecho.cfg
 #
 # This makefile may be included in other makefiles that need to build
 # the libraries containing the compiled source files generated as
@@ -14,7 +14,7 @@
 #
 # The absolute path to the generated source directory (at the time the
 # sources were generated) is:
-#    /home/david/ccs_workspace/uartGSM/src
+#    /home/david/uw/ee475/Breadcrumb/MSP432/uartGSM/src
 #
 GEN_SRC_DIR ?= ../src
 
