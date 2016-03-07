@@ -53,8 +53,10 @@
 
 #include "gsm.h"
 
-// Don't pass in NULL to this
+// Don't pass in NULL to these
+// Should only be used with constant strings
 #define UART_WRITE(handle, buf) UART_writePolling(handle, buf, sizeof(buf)-1)
+#define UART_WRITELN(handle, buf) UART_writePolling(handle, buf "\r\n", sizeof(buf)+1)
 
 void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR) {
@@ -122,23 +124,19 @@ void setupUART() {
 	}
 }
 
-#define CMDGSM(cmd, expect) \
-	UART_WRITE(uartPC, cmd); \
-	UART_WRITE(uartGSM, cmd); \
-	if (cmdGSM(cmd, expect, sizeof(expect)) != 0) \
-		UART_WRITE(uartPC, "BAD RESPONSE: Expected: " expect "\r\n");
-
-
-int cmdGSM(const char *cmd, const char *expect, unsigned nexp) {
+// Don't call this directly; instead, use the CMD_GSM_CHECK macro
+int expectGSMResponse(const char *expect, unsigned nexp) {
 	char input;
-	int n;
 	unsigned i = -1;
 
-	while (i < nexp - 1) {
-        n = UART_read(uartGSM, &input, 1);
-
-        if (n > 0)
-        	n++;
+	// This will fail on the (response, expected) = ("\r\n1234\r\n", "\r\n1234\r\nextra\r\n") pair
+	// however, this is an invalid response sequence so I won't bother assuming
+	// people using the function are that stupid
+	while (i < nexp) {
+		// Race condition with the other read?
+		// TODO: change this later
+        if (UART_read(uartGSM, &input, 1) > 0)
+        	i++;
 
         if (i >= 0 && input != expect[i])
         	return -1;
@@ -147,16 +145,41 @@ int cmdGSM(const char *cmd, const char *expect, unsigned nexp) {
 	return 0;
 }
 
+#define CTRLZ "\032"
+#define CR "\015"
+#define LF "\012"
+#define CMD_GSM(cmd) \
+	UART_WRITELN(uartPC, cmd); \
+	UART_WRITE(uartGSM, cmd CR);
+#define CMD_GSM_CHECK_RES(cmd, expect) (expectGSMResponse(CR LF expect CR LF, sizeof(expect) + 4) != 0)
+#define CMD_GSM_CHECK(cmd, expect) \
+	CMD_GSM(cmd); \
+	if (CMD_GSM_CHECK_RES(cmd, expect)) \
+		UART_WRITELN(uartPC, "BAD RESPONSE: Expected: " expect);
+
 void setupGSM() {
-	UART_WRITE(uartPC, "Initializing GSM Connection\r\n");
-	UART_WRITE(uartPC, "Verifying GPRS Attachment\r\n");
-	CMDGSM("AT+CGATT?\r\n", "+CGATT: 1");
-	CMDGSM("AT+CGATT?\r\n", "+CGATT: 0");
+	UART_WRITELN(uartPC, "Initializing GSM Connection");
+	UART_WRITELN(uartPC, "Verifying GPRS Attachment");
+	// faketest (just verify my macros work)
+	CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 1");
+	CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 0"); // should fail
+
+	// Verify GSM setup
+	CMD_GSM_CHECK("AT+CREG?", "+CREG: 0,1");  // verify network registration
+	CMD_GSM_CHECK("AT+CGATT=1", "OK");  // Make sure GPRS is attached (necessary?)
+	CMD_GSM_CHECK("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK");  // Set PDP context
+	CMD_GSM_CHECK("AT+CGACT=1,1", "OK");  // Activate PDP context
 }
 
-//void requestGET(char *hostname ) {
-//
-//}
+#define DATALEN "3"
+#define DATA "GET"
+void requestGET() {
+	CMD_GSM_CHECK("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80", "OK");  // Configure connection
+	CMD_GSM_CHECK("AT+SDATASTART=1,1", "OK");  // Start connection
+	// TODO: Check the socket AT+SDATASTATUS=1
+	CMD_GSM_CHECK("AT+SDATATSEND=1," DATALEN, ">");  // Issue the request
+	CMD_GSM_CHECK(DATA CTRLZ, "OK");  // Enter the data
+}
 
 void gsmTask(UArg arg0, UArg arg1)
 {
@@ -164,6 +187,7 @@ void gsmTask(UArg arg0, UArg arg1)
 
     setupUART();
     setupGSM();
+    requestGET();
 
     while (1) {
     	// Read from all the UARTS
