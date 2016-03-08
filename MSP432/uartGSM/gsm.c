@@ -95,6 +95,7 @@ inline int gsmResponseReady() {
 
 void clearGSMResponse() {
 	gsmResLen = 0;
+	resTrunc = 0;
 }
 
 // res MUST have length = GSM_MAX_RES_LEN
@@ -121,8 +122,7 @@ void parseGSMResponse(void *buf, size_t count) {
 			if (cur == LF_C) {
 				gsmResponseState = GSM_WAITING_FOR_END_CR;
 				// reset the response
-				gsmResLen = 0;
-				resTrunc = 0;
+				clearGSMResponse();
 			}
 			else if (cur != CR_C) {
 				gsmResponseState = GSM_WAITING_FOR_START_CR;
