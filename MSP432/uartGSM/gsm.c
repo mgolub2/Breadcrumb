@@ -54,11 +54,6 @@
 
 #include "gsm.h"
 
-// Don't pass in NULL to these
-// Should only be used with constant strings
-#define UART_WRITE(handle, buf) UART_writePolling(handle, buf, sizeof(buf)-1)
-#define UART_WRITELN(handle, buf) UART_writePolling(handle, buf "\r\n", sizeof(buf)+1)
-
 #define CTRLZ "\032"
 #define CR "\015"
 #define LF "\012"
@@ -69,9 +64,9 @@
 void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR && count > 0) {
 		// Write the data to the GSM
-		UART_writePolling(uartGSM, buf, count);
+		UART_write(uartGSM, buf, count);
 		// Write the data to the PC too
-		UART_writePolling(uartPC, buf, count);
+		UART_write(uartPC, buf, count);
 	}
 }
 
@@ -111,7 +106,6 @@ void waitForGSMResponse(char *res) {
 }
 
 void parseGSMResponse(void *buf, size_t count) {
-
 	int processed = 0;
 	while (processed < count) {
 		char cur = ((char *)buf)[processed];
@@ -163,7 +157,7 @@ void parseGSMResponse(void *buf, size_t count) {
 void gsmReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR && count > 0) {
 		// Write the data to the PC
-		UART_writePolling(uartPC, buf, count);
+		UART_write(uartPC, buf, count);
 		parseGSMResponse(buf, count);
 	}
 }
@@ -195,6 +189,7 @@ void setupUART() {
 	uartGSMParams.readCallback = &gsmReadUARTCallback;
 	uartGSMParams.writeDataMode = UART_DATA_BINARY;
 	uartGSMParams.readDataMode = UART_DATA_BINARY;
+	// TODO: reconfigure later, with different baud
 	uartGSMParams.baudRate = 9600;
 	uartGSM = UART_open(Board_UART1, &uartGSMParams);
 
@@ -203,42 +198,61 @@ void setupUART() {
 	}
 }
 
-#define CMD_GSM(cmd) \
-	UART_WRITELN(uartPC, cmd); \
-	UART_WRITE(uartGSM, cmd CR);
+// send a commant to the GSM module
+void cmdGSM(char *cmd, unsigned cmdlen) {
+	UART_write(uartPC, cmd, cmdlen);
+	UART_write(uartPC, "\r\n", 2);
+	UART_write(uartGSM, cmd, cmdlen);
+	UART_write(uartGSM, CR, 1);
+}
 
-#define CMD_GSM_RES(cmd, buf) \
-		CMD_GSM(cmd); \
-		waitForGSMResponse(buf);
+#define EAT_OK 1
+#define NO_EAT_OK 0
+// lengths don't include the null terminator
+// Returns the strcmp result of the received response vs the expected response
+int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen, unsigned eatOK) {
+	char res[GSM_MAX_RES_LEN] = {0};
+	cmdGSM(cmd, cmdlen);
+	waitForGSMResponse(res);
+	// TODO: this need to be more complex. If there's an error, probably won't get an OK
+	// and this will loop forever
+	if (eatOK)
+		waitForGSMResponse(NULL);
 
-#define EAT_OK() waitForGSMResponse(NULL);
+	return strcmp(res, expect);
+}
 
-#define CMD_GSM_RES_ABORT_ON_FAILURE(cmd, buf, expect, error_print) \
-		CMD_GSM_RES(cmd, buf); \
-		if (strcmp(buf, expect) != 0) { \
-			UART_WRITELN(uartPC, error_print); \
-			return -1; \
-		}
+// constrant string macro for lazy people not wanting to count the length
+#define CSTR(str) str, sizeof(str)-1
 
-#define CMD_GSM_RES_ABORT_ON_FAILURE_EAT(cmd, buf, expect, error_print) \
-		CMD_GSM_RES_ABORT_ON_FAILURE(cmd, buf, expect, error_print); \
-		EAT_OK();
+#define CMD_GSM_VERIFY(cmd, expect, eatOK) cmdVerifyResponse(CSTR(cmd), CSTR(expect), eatOK)
+
+// cmd, expect, and error_print must be const strings
+#define CMD_GSM_RET_ON_FAILURE(cmd, expect, eatOK, error_print) \
+	if (CMD_GSM_VERIFY(cmd, expect, eatOK)) { \
+		UART_write(uartPC, CSTR(cmd)); \
+		return -1; \
+	}
 
 int setupGSM() {
-	char res[GSM_MAX_RES_LEN] = {0};
+	// TODO: check for +SIMD: 11 and +SIMD: 4, but must have a timeout
+	UART_write(uartPC, CSTR("Initializing GSM Connection\r\n"));
 
-	UART_WRITELN(uartPC, "Initializing GSM Connection");
-	UART_WRITELN(uartPC, "Verifying GPRS Attachment");
+	UART_write(uartPC, CSTR("Verifying GPRS attachment\r\n"));
+	if (CMD_GSM_VERIFY("AT+CGATT?", "+CGATT: 1", EAT_OK)) {
+		// Cell not attached
+		UART_write(uartPC, CSTR("Attaching GPRS"));
+		CMD_GSM_RET_ON_FAILURE("AT+CGATT=1", "OK", NO_EAT_OK, "Failed to attach GPRS");
+	}
 
-	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CGATT?", res, "+CGATT: 1", "Cell not attached");
-	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGATT=1", res, "OK", "Failed to attach cell");
-	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CGATT?", res, "+CGATT: 1", "Cell not attached");
+	UART_write(uartPC, CSTR("Verifying network connection\r\n"));
+	CMD_GSM_RET_ON_FAILURE("AT+CREG?", "+CREG: 0,1", EAT_OK, "Not registered with network");
 
-	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CREG?", res, "+CREG: 0,1", "Not registered with network");
-	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", res, "OK", "Failed to set PDP context");
-	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGACT=1,1", res, "OK", "Failed to activate PDP context");
+	UART_write(uartPC, CSTR("Setting PDP context\r\n"));
+	CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK", NO_EAT_OK, "Failed to set PDP context");
+	CMD_GSM_RET_ON_FAILURE("AT+CGACT=1,1", "OK", NO_EAT_OK, "Failed to activate PDP context");
 
-	UART_WRITELN(uartPC, "GSM Setup Finished");
+	UART_write(uartPC, CSTR("GSM Setup Finished\r\n"));
 
 	return 0;
 }
