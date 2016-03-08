@@ -75,10 +75,6 @@ void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	}
 }
 
-void pcWriteUARTCallback(UART_Handle handle, void *buf, size_t count) {
-	// Empty!
-}
-
 #define GSM_MAX_RES_LEN 256
 volatile char gsmRes[GSM_MAX_RES_LEN] = { 0 };
 volatile unsigned gsmResLen = 0;
@@ -107,7 +103,8 @@ void waitForGSMResponse(char *res) {
 	while (!gsmResponseReady())
 			UART_read(uartGSM, &input, 1);
 
-	strcpy(res, gsmRes);
+	if (res != NULL)
+		strcpy(res, (const char *)gsmRes);
 
 	clearGSMResponse();
 }
@@ -171,10 +168,6 @@ void gsmReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	}
 }
 
-void gsmWriteUARTCallback(UART_Handle handle, void *buf, size_t count) {
-	// Empty!
-}
-
 void setupUART() {
 	UART_Params uartPCParams;
 	UART_Params uartGSMParams;
@@ -184,13 +177,9 @@ void setupUART() {
 	//System_flush();
 	UART_Params_init(&uartPCParams);
 	uartPCParams.readMode = UART_MODE_CALLBACK;
-	uartPCParams.writeMode = UART_MODE_CALLBACK;
 	uartPCParams.readCallback = &pcReadUARTCallback;
-	uartPCParams.writeCallback = &pcWriteUARTCallback;
 	uartPCParams.writeDataMode = UART_DATA_BINARY;
 	uartPCParams.readDataMode = UART_DATA_BINARY;
-	uartPCParams.readReturnMode = UART_RETURN_NEWLINE;
-	uartPCParams.readEcho = UART_ECHO_OFF;
 	uartPCParams.baudRate = 9600;
 	uartPC = UART_open(Board_UART0, &uartPCParams);
 
@@ -203,12 +192,9 @@ void setupUART() {
 	//System_flush();
 	UART_Params_init(&uartGSMParams);
 	uartGSMParams.readMode = UART_MODE_CALLBACK;
-	uartGSMParams.writeMode = UART_MODE_CALLBACK;
 	uartGSMParams.readCallback = &gsmReadUARTCallback;
-	uartGSMParams.writeCallback = &gsmWriteUARTCallback;
 	uartGSMParams.writeDataMode = UART_DATA_BINARY;
 	uartGSMParams.readDataMode = UART_DATA_BINARY;
-	uartGSMParams.readReturnMode = UART_RETURN_NEWLINE;
 	uartGSMParams.baudRate = 9600;
 	uartGSM = UART_open(Board_UART1, &uartGSMParams);
 
@@ -217,83 +203,54 @@ void setupUART() {
 	}
 }
 
-// Don't call this directly; instead, use the CMD_GSM_CHECK macro
-int expectGSMResponse(const char *expect, unsigned nexp) {
-	char input;
-	int i = -1;
-
-	// This will fail on the (response, expected) = ("\r\n1234\r\n", "\r\n1234\r\nextra\r\n") pair
-	// however, this is an invalid response sequence so I won't bother assuming
-	// people using the function are that stupid
-	while (i < nexp) {
-		// Race condition with the other read?
-		// TODO: change this later
-		if (UART_read(uartGSM, &input, 1) > 0) {
-			i++;
-			UART_WRITELN(uartPC, "inc");
-		}
-
-		if (i >= 0 && input != expect[i]) {
-			UART_WRITELN(uartPC, "ret");
-			return -1;
-		}
-	}
-
-	return 0;
-}
-
 #define CMD_GSM(cmd) \
 	UART_WRITELN(uartPC, cmd); \
 	UART_WRITE(uartGSM, cmd CR);
-#define CMD_GSM_CHECK_RES(cmd, expect) (expectGSMResponse(CR LF expect CR LF, sizeof(expect) + 4) != 0)
-#define CMD_GSM_CHECK(cmd, expect) \
-	CMD_GSM(cmd); \
-	if (CMD_GSM_CHECK_RES(cmd, expect)) \
-		UART_WRITELN(uartPC, "BAD RESPONSE: Expected: " expect);
 
-void setupGSM() {
+#define CMD_GSM_RES(cmd, buf) \
+		CMD_GSM(cmd); \
+		waitForGSMResponse(buf);
+
+#define EAT_OK() waitForGSMResponse(NULL);
+
+#define CMD_GSM_RES_ABORT_ON_FAILURE(cmd, buf, expect, error_print) \
+		CMD_GSM_RES(cmd, buf); \
+		if (strcmp(buf, expect) != 0) { \
+			UART_WRITELN(uartPC, error_print); \
+			return -1; \
+		}
+
+#define CMD_GSM_RES_ABORT_ON_FAILURE_EAT(cmd, buf, expect, error_print) \
+		CMD_GSM_RES_ABORT_ON_FAILURE(cmd, buf, expect, error_print); \
+		EAT_OK();
+
+int setupGSM() {
 	char res[GSM_MAX_RES_LEN] = {0};
 
 	UART_WRITELN(uartPC, "Initializing GSM Connection");
 	UART_WRITELN(uartPC, "Verifying GPRS Attachment");
 
-	CMD_GSM("AT+CGATT?");
-	waitForGSMResponse(res);
-	if (strcmp(res, "+CGATT: 0") != 0)
-		UART_WRITELN(uartPC, "BAD RESPONSE 1");
-	waitForGSMResponse(res);
-	if (strcmp(res, "OK") != 0)
-		UART_WRITELN(uartPC, "NO OK");
-	CMD_GSM("AT+CGATT?");
-	waitForGSMResponse(res);
-	if (strcmp(res, "+CGATT: 1") != 0)
-		UART_WRITELN(uartPC, "BAD RESPONSE 2");
-	waitForGSMResponse(res);
-	if (strcmp(res, "+CGATT: 0") != 0)
-		UART_WRITELN(uartPC, "BAD RESPONSE 3");
+	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CGATT?", res, "+CGATT: 1", "Cell not attached");
+	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGATT=1", res, "OK", "Failed to attach cell");
+	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CGATT?", res, "+CGATT: 1", "Cell not attached");
 
-	UART_WRITELN(uartPC, "TEST DONE");
+	CMD_GSM_RES_ABORT_ON_FAILURE_EAT("AT+CREG?", res, "+CREG: 0,1", "Not registered with network");
+	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", res, "OK", "Failed to set PDP context");
+	CMD_GSM_RES_ABORT_ON_FAILURE("AT+CGACT=1,1", res, "OK", "Failed to activate PDP context");
 
+	UART_WRITELN(uartPC, "GSM Setup Finished");
 
-	// faketest (just verify my macros work)
-	CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 1");
-	CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 0"); // should fail
-
-	// Verify GSM setup
-	CMD_GSM_CHECK("AT+CREG?", "+CREG: 0,1");  // verify network registration
-	CMD_GSM_CHECK("AT+CGATT=1", "OK"); // Make sure GPRS is attached (necessary?)
-	CMD_GSM_CHECK("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK");  // Set PDP context
-	CMD_GSM_CHECK("AT+CGACT=1,1", "OK");  // Activate PDP context
+	return 0;
 }
 
 #define DATALEN "3"
 #define DATA "GET"
 void requestGET() {
-	CMD_GSM_CHECK("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80", "OK"); // Configure connection
-	CMD_GSM_CHECK("AT+SDATASTART=1,1", "OK");  // Start connection
-	// TODO: Check the socket AT+SDATASTATUS=1
-	CMD_GSM_CHECK("AT+SDATATSEND=1," DATALEN, ">");  // Issue the request
-	CMD_GSM_CHECK(DATA CTRLZ, "OK");  // Enter the data
+//	CMD_GSM_CHECK("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80", "OK"); // Configure connection
+//	CMD_GSM_CHECK("AT+SDATASTART=1,1", "OK");  // Start connection
+//	// TODO: Check the socket AT+SDATASTATUS=1
+//	CMD_GSM_CHECK("AT+SDATATSEND=1," DATALEN, ">");  // Issue the request
+//	CMD_GSM_CHECK(DATA CTRLZ, "OK");  // Enter the data
 }
 
 void gsmTask(UArg arg0, UArg arg1) {
@@ -306,10 +263,6 @@ void gsmTask(UArg arg0, UArg arg1) {
 	while (1) {
 		// Read from all the UARTS
 		UART_read(uartPC, &input, 1);
-		if (input == '{') {
-			CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 1");
-			CMD_GSM_CHECK("AT+CGATT?", "+CGATT: 0");
-		}
 		if (input == '{') {
 			setupGSM();
 		}
