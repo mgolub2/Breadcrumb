@@ -97,6 +97,9 @@ hal_Hwi_stack.o: hal/Hwi_stack.c makefile
 hal_Hwi_startup.o: hal/Hwi_startup.c makefile
 	@-$(call RM, hal_Hwi_startup.o)
 	$(COMPILE) -o hal_Hwi_startup.o
+hal_Timer.o: hal/Timer.c makefile
+	@-$(call RM, hal_Timer.o)
+	$(COMPILE) -o hal_Timer.o
 gnu_ReentSupport.o: rts/gnu/ReentSupport.c makefile
 	@-$(call RM, gnu_ReentSupport.o)
 	$(COMPILE) -o gnu_ReentSupport.o
@@ -140,7 +143,7 @@ utils_Load_CPU.o: utils/Load_CPU.c makefile
 	@-$(call RM, utils_Load_CPU.o)
 	$(COMPILE) -o utils_Load_CPU.o
 
-sysbios.am4fg: m3_Hwi_asm_gnu.o m3_Hwi_asm_switch_gnu.o m3_IntrinsicsSupport_asm_gnu.o m3_TaskSupport_asm_gnu.o _BIOS.o knl_Clock.o knl_Idle.o knl_Intrinsics.o knl_Event.o knl_Queue.o knl_Semaphore.o knl_Swi.o knl_Swi_andn.o knl_Task.o hal_Hwi.o hal_Hwi_stack.o hal_Hwi_startup.o gnu_ReentSupport.o gnu_SemiHostSupport.o init_Boot.o m3_Hwi.o m3_TaskSupport.o m3_Timer.o m3_TimestampProvider.o msp432_Timer.o msp432_ClockFreqs.o gates_GateHwi.o gates_GateMutex.o heaps_HeapMem.o utils_Load.o utils_Load_CPU.o
+sysbios.am4fg: m3_Hwi_asm_gnu.o m3_Hwi_asm_switch_gnu.o m3_IntrinsicsSupport_asm_gnu.o m3_TaskSupport_asm_gnu.o _BIOS.o knl_Clock.o knl_Idle.o knl_Intrinsics.o knl_Event.o knl_Queue.o knl_Semaphore.o knl_Swi.o knl_Swi_andn.o knl_Task.o hal_Hwi.o hal_Hwi_stack.o hal_Hwi_startup.o hal_Timer.o gnu_ReentSupport.o gnu_SemiHostSupport.o init_Boot.o m3_Hwi.o m3_TaskSupport.o m3_Timer.o m3_TimestampProvider.o msp432_Timer.o msp432_ClockFreqs.o gates_GateHwi.o gates_GateMutex.o heaps_HeapMem.o utils_Load.o utils_Load_CPU.o
 	@echo arm4fg $^ ...
 	@-$(call RM, $@)
 	@$(AR) $@ $^
