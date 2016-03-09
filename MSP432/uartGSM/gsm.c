@@ -98,16 +98,20 @@ void clearGSMResponse() {
 	resTrunc = 0;
 }
 
-#define GSM_READ_TIMEOUT_MS 5000
+#define GSM_READ_MAX_TIMEOUT_MS 30000
+#define GSM_READ_DEFAULT_TIMEOUT_MS 5000
 Timer_Handle gsmReadTimer;
 volatile int gsmReadTimeout = 0;
 void gsmReadTimeoutIsr(UArg arg) {
-	if (gsmReadTimeout < GSM_READ_TIMEOUT_MS)
+	if (gsmReadTimeout < GSM_READ_MAX_TIMEOUT_MS)
 		gsmReadTimeout++;
 }
 
-inline int gsmReadTimedout() {
-	return gsmReadTimeout >= GSM_READ_TIMEOUT_MS;
+inline int gsmReadTimedout(int timeout_ms) {
+	if (timeout_ms < 0)
+		return 0;
+
+	return gsmReadTimeout >= timeout_ms;
 }
 
 inline void gsmReadTimeoutReset() {
@@ -115,12 +119,12 @@ inline void gsmReadTimeoutReset() {
 }
 
 // res MUST have length = GSM_MAX_RES_LEN
-void waitForGSMResponse(char *res) {
+void waitForGSMResponse(char *res, int timeout_ms) {
 	char input;
 
 	Timer_start(gsmReadTimer);
 	while (!gsmResponseReady()) {
-		if (gsmReadTimedout()) {
+		if (gsmReadTimedout(timeout_ms)) {
 			Timer_stop(gsmReadTimer);
 			gsmReadTimeoutReset();
 			clearGSMResponse();
@@ -245,24 +249,24 @@ void cmdGSM(char *cmd, unsigned cmdlen) {
 #define NO_EAT_OK 0
 // lengths don't include the null terminator
 // Returns the strcmp result of the received response vs the expected response
-int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen, unsigned eatOK) {
+int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen, unsigned eatOK, int timeout_ms) {
 	char res[GSM_MAX_RES_LEN] = {0};
 	cmdGSM(cmd, cmdlen);
-	waitForGSMResponse(res);
+	waitForGSMResponse(res, timeout_ms);
 	// TODO: this need to be more complex. If there's an error, probably won't get an OK
 	// and this will loop forever
 	if (eatOK)
-		waitForGSMResponse(NULL);
+		waitForGSMResponse(NULL, timeout_ms);
 
 	return strcmp(res, expect);
 }
 
 
-#define CMD_GSM_VERIFY(cmd, expect, eatOK) cmdVerifyResponse(CSTR(cmd), CSTR(expect), eatOK)
+#define CMD_GSM_VERIFY(cmd, expect, eatOK, timeout_ms) cmdVerifyResponse(CSTR(cmd), CSTR(expect), eatOK, timeout_ms)
 
 // cmd, expect, and error_print must be const strings
-#define CMD_GSM_RET_ON_FAILURE(cmd, expect, eatOK, error_print) \
-	if (CMD_GSM_VERIFY(cmd, expect, eatOK)) { \
+#define CMD_GSM_RET_ON_FAILURE(cmd, expect, eatOK, error_print, timeout_ms) \
+	if (CMD_GSM_VERIFY(cmd, expect, eatOK, timeout_ms)) { \
 		UART_writePolling(uartPC, CSTR(error_print)); \
 		return -1; \
 	}
@@ -272,18 +276,18 @@ int setupGSM() {
 	UART_writePolling(uartPC, CSTR("Initializing GSM Connection\r\n"));
 
 	UART_writePolling(uartPC, CSTR("Verifying GPRS attachment\r\n"));
-	if (CMD_GSM_VERIFY("AT+CGATT?", "+CGATT: 1", EAT_OK)) {
+	if (CMD_GSM_VERIFY("AT+CGATT?", "+CGATT: 1", EAT_OK, GSM_READ_DEFAULT_TIMEOUT_MS)) {
 		// Cell not attached
 		UART_writePolling(uartPC, CSTR("Not attached, attaching GPRS now\r\n"));
-		CMD_GSM_RET_ON_FAILURE("AT+CGATT=1", "OK", NO_EAT_OK, "Failed to attach GPRS\r\n");
+		CMD_GSM_RET_ON_FAILURE("AT+CGATT=1", "OK", NO_EAT_OK, "Failed to attach GPRS\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 	}
 
 	UART_writePolling(uartPC, CSTR("Verifying network connection\r\n"));
-	CMD_GSM_RET_ON_FAILURE("AT+CREG?", "+CREG: 0,1", EAT_OK, "Not registered with network\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+CREG?", "+CREG: 0,1", EAT_OK, "Not registered with network\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 
 	UART_writePolling(uartPC, CSTR("Setting PDP context\r\n"));
-	CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK", NO_EAT_OK, "Failed to set PDP context\r\n");
-	CMD_GSM_RET_ON_FAILURE("AT+CGACT=1,1", "OK", NO_EAT_OK, "Failed to activate PDP context\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK", NO_EAT_OK, "Failed to set PDP context\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+	CMD_GSM_RET_ON_FAILURE("AT+CGACT=1,1", "OK", NO_EAT_OK, "Failed to activate PDP context\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 
 	UART_writePolling(uartPC, CSTR("GSM Setup Finished\r\n"));
 
@@ -312,11 +316,11 @@ int setupTimer() {
 #define DATA "GET"
 int requestGET() {
 	UART_writePolling(uartPC, CSTR("Connecting to Google\r\n"));
-	CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80", "OK", NO_EAT_OK, "TCP configuration failed\r\n");
-	CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", NO_EAT_OK, "TCP connect failed\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80", "OK", NO_EAT_OK, "TCP configuration failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+	CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", NO_EAT_OK, "TCP connect failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 //	// TODO: Check the socket AT+SDATASTATUS=1
-	CMD_GSM_RET_ON_FAILURE("AT+SDATATSEND=1," DATALEN, ">", NO_EAT_OK, "Request to GSM failed\r\n");
-	CMD_GSM_RET_ON_FAILURE(DATA CTRLZ, "OK", NO_EAT_OK, "Entering data failed\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+SDATATSEND=1," DATALEN, ">", NO_EAT_OK, "Request to GSM failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+	CMD_GSM_RET_ON_FAILURE(DATA CTRLZ, "OK", NO_EAT_OK, "Entering data failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 
 	return 0;
 }
