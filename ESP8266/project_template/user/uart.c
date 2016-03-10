@@ -29,6 +29,7 @@
 #include "freertos/queue.h"
 
 #include "uart.h"
+#include "parse.h"
 
 enum {
     UART_EVENT_RX_CHAR,
@@ -345,6 +346,9 @@ UART_IntrConfig(UART_Port uart_no,  UART_IntrConfTypeDef *pUARTIntrConf)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), pUARTIntrConf->UART_IntrEnMask);
 }
 
+char tcp_data[PACKET_SIZE+1];
+uint16 data_index = 0;
+
 LOCAL void
 uart0_rx_intr_handler(void *para)
 {
@@ -379,29 +383,25 @@ uart0_rx_intr_handler(void *para)
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
 
-            uint32_t fifo_size = fifo_len*sizeof(char);
-            char * tcp_data = zalloc(fifo_size+1);
-            tcp_data[fifo_size] = '\0';
-
-            //uint8_t attention_count = 0;
+            uint8_t attention_count = 0;
 
             while (buf_idx < fifo_len) {
                 //echo char back remove this for not debug?
                 char rec_char = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
                 //uart_tx_one_char(UART0, rec_char);
-                /*if (rec_char == ATT_CHAR) {
+                if (rec_char == ATT_CHAR) {
                     if (attention_count < NUM_ATT_CHAR) {
-                        attention_count ++; 
+                        attention_count++;
                     }
                     else {
-                        char * tcp_data = zalloc(fifo_len*sizeof(char));
-
+                        attention_count = 0;
+                        parse(tcp_data, data_index);
                     }
-
-                }*/
-
-                tcp_data[buf_idx] = rec_char;
-                //code here to open new wifi socket and party
+                }
+                else if (attention_count >= NUM_ATT_CHAR) {
+                    tcp_data[data_index] = rec_char;
+                    data_index++;
+                }
                 buf_idx++;
             }
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);

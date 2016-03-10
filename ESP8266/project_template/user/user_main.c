@@ -164,9 +164,9 @@ void wifi_80_task(void *pvParameters) {
 			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
 			//printf("%s\n", );
 			//How to limit phone to 128 byet packet???
-			char *recv_buf = (char *)zalloc(1024); //can this be larger...
+			char *recv_buf = (char *)zalloc(PACKET_SIZE); //can this be larger...
 			uint32_t recbytes;
-			while ((recbytes = read(client_sock , recv_buf, 1024)) > 0) {
+			while ((recbytes = read(client_sock , recv_buf, PACKET_SIZE)) > 0) {
       			recv_buf[recbytes] = 0;
       			printf("###%s,%d,%s,###\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port), recv_buf);
       			//printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);

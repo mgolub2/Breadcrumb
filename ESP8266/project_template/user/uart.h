@@ -34,8 +34,9 @@ extern "C" {
 #define UART_INTR_MASK          0x1ff
 #define UART_LINE_INV_MASK      (0x3f<<19)
 
-#define ATT_CHAR 'x'
+#define ATT_CHAR '='
 #define NUM_ATT_CHAR 3
+#define PACKET_SIZE 4096
 
 typedef enum {
     UART_WordLength_5b = 0x0,
