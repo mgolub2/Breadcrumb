@@ -83,7 +83,7 @@ uart0_write_char(char c)
 }
 
 LOCAL void
-uart_rx_intr_handler_ssc(void)
+uart_rx_intr_handler_ssc(void *arg)
 {
     /* uart0 and uart1 intr combine togther, when interrupt occur, see reg 0x3ff20020, bit2, bit0 represents
       * uart1 and uart0 respectively
@@ -117,7 +117,7 @@ uart_config(uint8 uart_no, UartDevice *uart)
         PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_U1TXD_BK);
     } else {
         /* rcv_buff size if 0x100 */
-        _xt_isr_attach(ETS_UART_INUM, uart_rx_intr_handler_ssc);
+        _xt_isr_attach(ETS_UART_INUM, uart_rx_intr_handler_ssc, NULL);
         PIN_PULLUP_DIS(PERIPHS_IO_MUX_U0TXD_U);
         PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0TXD_U, FUNC_U0TXD);
     }
@@ -375,16 +375,37 @@ uart0_rx_intr_handler(void *para)
 
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_FULL_INT_CLR);
         } else if (UART_RXFIFO_TOUT_INT_ST == (uart_intr_status & UART_RXFIFO_TOUT_INT_ST)) {
-            printf("tout\r\n");
+            //printf("tout\r\n");
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
 
+            uint32_t fifo_size = fifo_len*sizeof(char);
+            char * tcp_data = zalloc(fifo_size+1);
+            tcp_data[fifo_size] = '\0';
+
+            //uint8_t attention_count = 0;
+
             while (buf_idx < fifo_len) {
-                uart_tx_one_char(UART0, READ_PERI_REG(UART_FIFO(UART0)) & 0xFF);
+                //echo char back remove this for not debug?
+                char rec_char = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
+                //uart_tx_one_char(UART0, rec_char);
+                /*if (rec_char == ATT_CHAR) {
+                    if (attention_count < NUM_ATT_CHAR) {
+                        attention_count ++; 
+                    }
+                    else {
+                        char * tcp_data = zalloc(fifo_len*sizeof(char));
+
+                    }
+
+                }*/
+
+                tcp_data[buf_idx] = rec_char;
+                //code here to open new wifi socket and party
                 buf_idx++;
             }
-
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
+            printf("%s\n", tcp_data);
         } else if (UART_TXFIFO_EMPTY_INT_ST == (uart_intr_status & UART_TXFIFO_EMPTY_INT_ST)) {
             printf("empty\n\r");
             WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_TXFIFO_EMPTY_INT_CLR);
@@ -404,7 +425,7 @@ uart_init_new(void)
     UART_WaitTxFifoEmpty(UART1);
 
     UART_ConfigTypeDef uart_config;
-    uart_config.baud_rate    = BIT_RATE_74880;
+    uart_config.baud_rate    = BIT_RATE_115200;
     uart_config.data_bits     = UART_WordLength_8b;
     uart_config.parity          = USART_Parity_None;
     uart_config.stop_bits     = USART_StopBits_1;

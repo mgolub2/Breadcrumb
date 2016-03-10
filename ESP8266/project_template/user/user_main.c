@@ -32,14 +32,16 @@
 #include "udns.h"
 
 #define SERVER_IP "192.168.1.1"
-#define SERVER_PORT 80 
+#define SERVER_PORT 8080 
 #define SSID "MSP432_Breadcrumb"
 #define PASSWORD "meepvista2" 
+#define BUFFER_SIZE 5000
 
-void ICACHE_FLASH_ATTR rx_task(void *pvParameters);
-void ICACHE_FLASH_ATTR tx_task(void *pvParameters);
-void ICACHE_FLASH_ATTR configure_wifi();
-void ICACHE_FLASH_ATTR config_custom_uart0();
+//void rx_task(void *pvParameters);
+void wifi_80_task(void *pvParameters);
+void uart0_rx_intr_handler (void *para);
+void configure_wifi();
+void config_custom_uart0();
 void user_init(void);
 
 /******************************************************************************
@@ -49,23 +51,66 @@ void user_init(void);
  * Returns      : none
 *******************************************************************************/
 
-void uart0_rx_intr_handler (void *para) {
-	//do something here
-}
+/*void uart0_rx_intr_handler (void *para) {
+	uint32_t uart_intr_status = READ_PERI_REG(UART_INT_ST(0));
 
-void ICACHE_FLASH_ATTR rx_task(void *pvParameters) {
-	/*printf("I'm a rx\n");
+	while (uart_intr_status != 0) {
+		if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
+			while (READ_PERI_REG(UART_STATUS(0)) & (UART_RXFIFO_CNT << UART_RXFIFO_CNT_S)) {
+			    uint8_t recByte = READ_PERI_REG(UART_FIFO(0)) & 0xFF;
+			    //printf("%x\n", recByte);
+			}
+			WRITE_PERI_REG(UART_INT_CLR(0), UART_RXFIFO_FULL_INT_CLR);
+		}
+	uart_intr_status = READ_PERI_REG(UART_INT_ST(0));
+	}
+}
+*/
+
+void rx_task(void *pvParameters) {
+	printf("I'm a rx\n");
 	while(1) {
-    	int j = 0;
-    	int i;
-    	for (i = 0; i < 100000000; i++) {
-    		j ++;
-    	}
-    	printf("J is L %d\n", j);
-    };*/
+    	
+    };
 }
 
-void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
+//unsigned char buffer[BUFFER_SIZE]; //= (unsigned char *)malloc(65536); //jesus
+
+/*
+void wifi_raw_task(void *pcParameters) {
+	
+	vTaskDelay(10000/portTICK_RATE_MS);
+
+	int saddr_size , data_size;
+    struct sockaddr saddr;
+    struct in_addr in;
+    printf("Starting raw socket\n");
+    int sock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_IP);
+
+    if(sock_raw < 0) {
+        printf("Socket Error\n");
+        printf("%d\n", sock_raw);
+    }
+
+	while(1) {
+		saddr_size = sizeof saddr;
+        //Receive a packet
+        data_size = recvfrom(sock_raw , buffer , BUFFER_SIZE , 0 , &saddr , &saddr_size);
+        if(data_size <0 )
+        {
+            printf("Recvfrom error , failed to get packets\n");
+        }
+        int i;
+        for (i = 0; i < data_size; i++) {
+        	printf("%x", buffer[i]);
+        }
+        printf("\n*******\n");
+        vTaskDelay(10000/portTICK_RATE_MS);
+	}
+}
+*/
+
+void wifi_80_task(void *pvParameters) {
 	printf("I'm a tx\n");
 	int32 listenfd;
 	int32 ret;
@@ -114,14 +159,16 @@ void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
        			//printf("ESP8266 TCP server task > accept fail\n");
 				continue; 
 			}
+
 			//put this in struct perhaps
 			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
+			//printf("%s\n", );
 			//How to limit phone to 128 byet packet???
 			char *recv_buf = (char *)zalloc(1024); //can this be larger...
 			uint32_t recbytes;
 			while ((recbytes = read(client_sock , recv_buf, 1024)) > 0) {
       			recv_buf[recbytes] = 0;
-      			printf("###%s###", recv_buf);
+      			printf("###%s,%d,%s,###\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port), recv_buf);
       			//printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);
 			}
 			//printf("Free'd buffer!");
@@ -134,10 +181,12 @@ void ICACHE_FLASH_ATTR wifi_80_task(void *pvParameters) {
 	}
 }
 
-void ICACHE_FLASH_ATTR config_custom_uart0() {
+// ICACHE_FLASH_ATTR 
+/*
+void config_custom_uart0() {
 	//Configure uart 0 how we want. 
 	UART_ConfigTypeDef uart_config;
-	uart_config.baud_rate = 115200;
+	uart_config.baud_rate = BIT_RATE_115200;
 	uart_config.data_bits = UART_WordLength_8b;
 	uart_config.parity = USART_Parity_None;
 	uart_config.stop_bits = USART_StopBits_1;
@@ -151,11 +200,12 @@ void ICACHE_FLASH_ATTR config_custom_uart0() {
 	uart_intr.UART_RX_FifoFullIntrThresh = 10;
 	uart_intr.UART_RX_TimeOutIntrThresh = 2;
 	uart_intr.UART_TX_FifoEmptyIntrThresh = 20;
-	UART_IntrConfig(UART0, &uart_intr);
+	//UART_IntrConfig(UART0, &uart_intr);
 	UART_SetPrintPort(UART0);
-	UART_intr_handler_register(uart0_rx_intr_handler, NULL);
-	ETS_UART_INTR_ENABLE();
+	//UART_intr_handler_register(uart0_rx_intr_handler, NULL);
+	//ETS_UART_INTR_ENABLE();
 }
+*/
 
 void configure_wifi() {
 	struct softap_config *config = (struct softap_config *)zalloc(sizeof(struct
@@ -181,9 +231,11 @@ void configure_wifi() {
 	wifi_softap_dhcps_start(); // enable soft-AP DHCP server
 }
 
+
 void user_init(void)
 {
 	//config_custom_uart0();
+	uart_init_new();
 	printf("Configuring WiFi\n");
 	//dns_server_task("4");
 	configure_wifi();
@@ -193,8 +245,10 @@ void user_init(void)
     	printf("Setting up wifi...");
     };
     //xTaskCreate(rx_task, "rx_task", 512, NULL, 2, NULL);
+    //xTaskCreate(frame_task. "frame_task", 2048, 2, NULL);
     xTaskCreate(wifi_80_task, "wifi_80_task", 2048, NULL, 2, NULL);
-    xTaskCreate(dns_server_task, "dns_server_task", 512, NULL, 2, NULL);
+    //xTaskCreate(wifi_raw_task, "wifi_raw_task", 2048, NULL, 2, NULL);
+    //xTaskCreate(dns_server_task, "dns_server_task", 512, NULL, 2, NULL);
     printf("DONE DONE\n");
 }
 

@@ -75,7 +75,7 @@ int get_port(char ip[], char header[17], struct sockaddr_in *dns_udp) {
 /*
 Task for FreeRTOS to call and serve tasty DNS on.
 */
-void ICACHE_FLASH_ATTR dns_server_task(void *pvParameters) {
+void dns_server_task(void *pvParameters) {
 	printf("Starting DNS server...");
 	char header[17] = "\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x00\x00\x04\x7f\x7f\x7f\x7f";
 	int a, len_inet;
