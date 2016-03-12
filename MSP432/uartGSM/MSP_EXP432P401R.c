@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Texas Instruments Incorporated
+ * Copyright (c) 2015-2016, Texas Instruments Incorporated
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,12 +38,8 @@
 
 #include <stdbool.h>
 
-#include <xdc/std.h>
-#include <xdc/runtime/Error.h>
-#include <xdc/runtime/System.h>
-
-#include <ti/sysbios/family/arm/m3/Hwi.h>
-
+#include <ti/drivers/ports/DebugP.h>
+#include <ti/drivers/ports/HwiP.h>
 #include <ti/drivers/Power.h>
 #include <ti/drivers/power/PowerMSP432.h>
 
@@ -58,6 +54,8 @@
 #include <timer_a.h>
 #include <uart.h>
 #include <wdt_a.h>
+
+#include <interrupt.h>
 
 #include "MSP_EXP432P401R.h"
 
@@ -74,16 +72,15 @@ __attribute__ ((aligned (256)))
 static DMA_ControlTable dmaControlTable[8];
 static bool dmaInitialized = false;
 
-static Hwi_Struct dmaHwiStruct;
-
 /*
  *  ======== dmaErrorHwi ========
  */
-static Void dmaErrorHwi(UArg arg)
+static void dmaErrorHwi(uintptr_t arg)
 {
-    System_printf("DMA error code: %d\n", MAP_DMA_getErrorStatus());
+    DebugP_log1("DMA error code: %d\n", MAP_DMA_getErrorStatus());
     MAP_DMA_clearErrorStatus();
-    System_abort("DMA error!!");
+    DebugP_log0("DMA error!!\n");
+    while(1);
 }
 
 /*
@@ -91,17 +88,17 @@ static Void dmaErrorHwi(UArg arg)
  */
 void MSP_EXP432P401R_initDMA(void)
 {
-    Error_Block eb;
-    Hwi_Params  hwiParams;
+    HwiP_Params hwiParams;
+    HwiP_Handle dmaErrorHwiHandle;
 
     if (!dmaInitialized) {
-        Error_init(&eb);
-        Hwi_Params_init(&hwiParams);
-        Hwi_construct(&(dmaHwiStruct), INT_DMA_ERR, dmaErrorHwi, &hwiParams,
-            &eb);
-        if (Error_check(&eb)) {
-            System_abort("Couldn't construct DMA error hwi");
+        HwiP_Params_init(&hwiParams);
+        dmaErrorHwiHandle = HwiP_create(INT_DMA_ERR, dmaErrorHwi, &hwiParams);
+        if (dmaErrorHwiHandle == NULL) {
+            DebugP_log0("Failed to create DMA error Hwi!!\n");
+            while (1);
         }
+
         MAP_DMA_enableModule();
         MAP_DMA_setControlBase(dmaControlTable);
 
@@ -246,8 +243,8 @@ void MSP_EXP432P401R_initI2C(void)
  *  =============================== Power ===============================
  */
 const PowerMSP432_Config PowerMSP432_config = {
-    .policyInitFxn = &PowerMSP432_policyInitFxn,
-    .policyFxn = &PowerMSP432_policyFxn,
+    .policyInitFxn = &PowerMSP432_initPolicy,
+    .policyFxn = &PowerMSP432_sleepPolicy,
     .initialPerfLevel = 2,
     .enablePolicy = false,
     .enablePerf = true
@@ -304,7 +301,7 @@ void MSP_EXP432P401R_initPWM(void)
     };
 
     /* Mapping capture compare registers to Port 2 */
-    MAP_PMAP_configurePorts((const uint8_t *) portMap, P2MAP, 1,
+    MAP_PMAP_configurePorts((const uint8_t *) portMap, PMAP_P2MAP, 1,
         PMAP_DISABLE_RECONFIGURATION);
 
     /* Enable PWM output on GPIO pins */

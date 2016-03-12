@@ -8,6 +8,6 @@
 	<isElfFormat value="true"/>
 	<rts value=""/>
 	<createSlaveProjects value=""/>
-	<origin value="/opt/ti/tirtos_msp43x_2_14_03_28/resources/msp_exp432P401RLaunchpad/driverExamples/gnuDriverExamples/uartExamples/com_ti_rtsc_tirtosmsp430_example_113.projectspec"/>
-	<templateProperties value="id=com_ti_rtsc_tirtosmsp430_example_113.projectspec.uartecho_MSP_EXP432P401R_GNU_MSP432P401R,type=rtsc,products=com.ti.rtsc.TIRTOSmsp430,xdcToolsVersion=3_31_01_33_core,target=gnu.targets.arm.M4F,platform=ti.platforms.msp432:MSP432P401R,buildProfile=release,isHybrid=true,configuroOptions= --compileOptions &quot;${COMPILER_FLAGS} &quot;,"/>
+	<origin value="/opt/ti/tirtos_msp43x_2_16_00_08/resources/msp_exp432P401RLaunchpad/driverExamples/gnuDriverExamples/uartExamples/com_ti_rtsc_tirtosmsp430_example_112.projectspec"/>
+	<templateProperties value="id=com_ti_rtsc_tirtosmsp430_example_112.projectspec.uartecho_MSP_EXP432P401R_GNU_MSP432P401R,type=rtsc,products=com.ti.rtsc.TIRTOSmsp430,xdcToolsVersion=3_32_00_06_core,target=gnu.targets.arm.M4F,platform=ti.platforms.msp432:MSP432P401R,buildProfile=release,isHybrid=true,configuroOptions= --compileOptions &quot;${COMPILER_FLAGS} &quot;,"/>
 </projectOptions>
