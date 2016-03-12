@@ -69,16 +69,86 @@
 // constrant string macro for lazy people not wanting to count the length
 #define CSTR(str) str, sizeof(str)-1
 
-volatile int commandModeOn = 0;
-void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
-	if (count != UART_ERROR && count > 0) {
-		// Write the data to the PC too
-		UART_writePolling(uartPC, buf, count);
+//volatile int commandModeOn = 0;
 
-		if (commandModeOn && ((char*) buf)[0] != '!')
-			// Write the data to the GSM
-			UART_writePolling(uartGSM, buf, count);
+#define PC_MAX_CMD_LEN 256
+volatile char pcCmd[PC_MAX_CMD_LEN] = { 0 };
+volatile unsigned pcCmdLen = 0;
+// True if the result was truncated in the response buffer
+volatile unsigned pcCmdTrunc = 0;
+enum PC_CMD_STATES {
+	PC_WAITING_FOR_START,
+	PC_WAITING_FOR_END
+};
+volatile enum PC_CMD_STATES pcCmdState = PC_WAITING_FOR_START;
+
+int pcCmdReady() {
+	return pcCmdState == PC_WAITING_FOR_START && pcCmdLen > 0;
+}
+
+void clearPCCmdSafe() {
+	pcCmdLen = 0;
+	pcCmdTrunc = 0;
+}
+
+void clearPCCmd() {
+	clearPCCmdSafe();
+	// desperate
+	pcCmdState = PC_WAITING_FOR_START;
+}
+
+void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
+	int processed = 0;
+	while (processed < count) {
+		char cur = ((char *) buf)[processed];
+		if (cur == '\0') {
+			processed++;
+			continue;
+		}
+
+		if (pcCmdState == PC_WAITING_FOR_START) {
+			if (cur == '!' || cur == '@') {
+				clearPCCmdSafe();
+				pcCmdState = PC_WAITING_FOR_END;
+				UART_writePolling(uartPC, &cur, 1);
+
+				// copy
+				if (pcCmdLen == PC_MAX_CMD_LEN - 1) {
+					pcCmdTrunc = 1;
+					break;
+				}
+				pcCmd[pcCmdLen] = cur;
+				pcCmdLen++;
+			}
+		} else if (pcCmdState == PC_WAITING_FOR_END) {
+			if (cur == '\r' || cur == '\n') {
+				pcCmdState = PC_WAITING_FOR_START;
+				pcCmd[pcCmdLen] = '\0';
+				UART_writePolling(uartPC, "\r\n", 2);
+			} else {
+				UART_writePolling(uartPC, &cur, 1);
+
+				// copy
+				if (pcCmdLen == PC_MAX_CMD_LEN - 1) {
+					pcCmdTrunc = 1;
+					break;
+				}
+				pcCmd[pcCmdLen] = cur;
+				pcCmdLen++;
+			}
+		}
+
+		processed++;
 	}
+
+//	if (count != UART_ERROR && count > 0) {
+//		// Write the data to the PC too
+//		UART_writePolling(uartPC, buf, count);
+//
+//		if (commandModeOn && ((char*) buf)[0] != '!')
+//			// Write the data to the GSM
+//			UART_writePolling(uartGSM, buf, count);
+//	}
 }
 
 #define GSM_MAX_RES_LEN 256
@@ -95,7 +165,7 @@ enum GSM_RES_STATES {
 };
 volatile enum GSM_RES_STATES gsmResponseState = GSM_WAITING_FOR_START_CR;
 
-inline int gsmResponseReady() {
+int gsmResponseReady() {
 	return gsmResponseState == GSM_WAITING_FOR_START_CR && gsmResLen > 0;
 }
 
@@ -133,8 +203,10 @@ inline void gsmReadTimeoutReset() {
 // res MUST have length = GSM_MAX_RES_LEN
 // returns -1 on a timeout
 int waitForGSMResponse(char *res, int timeout_ms) {
-	char input;
+	//char input;
+	char input[32];
 
+	gsmReadTimeoutReset();
 	Timer_start(gsmReadTimer);
 	while (!gsmResponseReady()) {
 		if (gsmReadTimedout(timeout_ms)) {
@@ -147,7 +219,12 @@ int waitForGSMResponse(char *res, int timeout_ms) {
 			UART_writePolling(uartPC, CSTR("GSM read timeout\r\n"));
 			return -1;
 		}
-		UART_read(uartGSM, &input, 1);
+
+		int len;
+		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS)
+			UART_read(uartGSM, &input, len);
+		else
+			UART_read(uartGSM, &input, 1);
 	}
 	Timer_stop(gsmReadTimer);
 
@@ -267,7 +344,7 @@ void setupUART() {
 	uartGSMParams.writeDataMode = UART_DATA_BINARY;
 	uartGSMParams.readDataMode = UART_DATA_BINARY;
 	// TODO: reconfigure later, with different baud
-	uartGSMParams.baudRate = 9600;
+	uartGSMParams.baudRate = 115200;
 	uartGSM = UART_open(Board_UART1, &uartGSMParams);
 
 	if (uartGSM == NULL) {
@@ -284,62 +361,84 @@ void cmdGSM(char *cmd, unsigned cmdlen) {
 	UART_writePolling(uartGSM, CR, 1);
 }
 
-#define EAT_OK 1
-#define NO_EAT_OK 0
+void dataGSM(char *data, unsigned datalen) {
+	clearGSMResponse();
+	UART_writePolling(uartPC, data, datalen);
+	UART_writePolling(uartPC, "\r\n", 2);
+	UART_writePolling(uartGSM, data, datalen);
+	UART_writePolling(uartGSM, CTRLZ, 1);
+}
+
+#define CMD_F_NONE 0
+#define CMD_F_EAT_OK 1
+#define CMD_F_CMP_N 2
+#define CMD_F_DATA 4
 // value is guarenteed to be different from any strcmp return value in any sane implementation
 #define CMD_VERIFY_TIMEDOUT (int)(1 << 9)
 // lengths don't include the null terminator
 // Returns the strcmp result of the received response vs the expected response
 int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen,
-		unsigned eatOK, int timeout_ms, int n) {
+		int timeout_ms, unsigned flags) {
 	char res[GSM_MAX_RES_LEN] = { 0 };
 
-	if (cmd != NULL)
-		cmdGSM(cmd, cmdlen);
+	if (cmd != NULL) {
+		if (flags & CMD_F_DATA)
+			dataGSM(cmd, cmdlen);
+		else
+			cmdGSM(cmd, cmdlen);
+	}
 
 	if (waitForGSMResponse(res, timeout_ms) == -1)
 		return CMD_VERIFY_TIMEDOUT;
 
-	if (eatOK)
+	if (flags & CMD_F_EAT_OK)
 		waitForGSMResponse(NULL, timeout_ms);
 
-	if (n)
-		return strncmp(res, expect, explen);
-	else
-		return strcmp(res, expect);
+	if (expect != NULL) {
+		if (flags & CMD_F_CMP_N)
+			return strncmp(res, expect, explen);
+		else
+			return strcmp(res, expect);
+	}
+
+	return 0;
 }
 
-#define CMD_GSM_VERIFY(cmd, expect, eatOK, timeout_ms) cmdVerifyResponse(CSTR(cmd), CSTR(expect), eatOK, timeout_ms, 0)
-#define CMD_GSM_VERIFY_N(cmd, expect, eatOK, timeout_ms) cmdVerifyResponse(CSTR(cmd), CSTR(expect), eatOK, timeout_ms, 1)
+#define CMD_GSM_VERIFY(cmd, expect, timeout_ms, flags) cmdVerifyResponse(CSTR(cmd), CSTR(expect), timeout_ms, flags)
 
 // cmd, expect, and error_print must be const strings
-#define CMD_GSM_RET_ON_FAILURE(cmd, expect, eatOK, error_print, timeout_ms) \
-	if (CMD_GSM_VERIFY(cmd, expect, eatOK, timeout_ms)) { \
+#define CMD_GSM_RET_ON_FAILURE(cmd, expect, timeout_ms, flags, error_print) \
+	if (CMD_GSM_VERIFY(cmd, expect, timeout_ms, flags)) { \
 		UART_writePolling(uartPC, CSTR(error_print)); \
 		return -1; \
 	}
 
 // returns 1 when the gsm is ready to communicate, else 0
-// it it's booting, it will wait until boot is complete and it is ready
+// if it's booting, it will wait until boot is complete and it is ready
 int gsmReady() {
 	char res[GSM_MAX_RES_LEN] = { 0 };
 
 	UART_writePolling(uartPC, CSTR("Checking if GSM exists\r\n"));
+	// TODO: why in a while loop?
 	while (1) {
 		// check if we can already communicate
-		if (CMD_GSM_VERIFY("AT+SIND=1023", "OK", NO_EAT_OK, 3000) == 0)
+		UART_writePolling(uartPC, CSTR("Checking if GSM is already up\r\n"));
+		if (CMD_GSM_VERIFY("AT+SIND=1023", "OK", 3000, CMD_F_NONE) == 0)
 			return 1;
 
 		// check if it's booting
+		UART_writePolling(uartPC, CSTR("GSM not up. Checking if it's booting\r\n"));
 		if (waitForGSMResponse(res, 10000))
 			// not booting, so see if it responds to a command
-			return CMD_GSM_VERIFY("AT+SIND=1023", "OK", NO_EAT_OK, 5000)
+			return CMD_GSM_VERIFY("AT+SIND=1023", "OK", 5000, CMD_F_NONE)
 					!= CMD_VERIFY_TIMEDOUT ;
 
+		// TODO: have a timeout here and if times out, try to communicate once more
 		// it's booting! wait until it's ready
+		UART_writePolling(uartPC, CSTR("GSM currently booting, waiting for +SIND: 4\r\n"));
 		if (!strncmp(res, CSTR("+SIND")))
 			if (res[7] == '4')
-				return CMD_GSM_VERIFY("AT+SIND=1023", "OK", NO_EAT_OK, 10000)
+				return CMD_GSM_VERIFY("AT+SIND=1023", "OK", 10000, CMD_F_NONE)
 						!= CMD_VERIFY_TIMEDOUT ;
 	}
 
@@ -349,34 +448,29 @@ int gsmReady() {
 int setupGSM() {
 	UART_writePolling(uartPC, CSTR("Initializing GSM Connection\r\n"));
 
-//	int res = CMD_VERIFY_TIMEDOUT;
-//	while (res == CMD_VERIFY_TIMEDOUT) {
-//		res = CMD_GSM_VERIFY("AT+SIND=1023", "OK", NO_EAT_OK, 30000);
-//	}
-
-	//CMD_GSM_RET_ON_FAILURE("AT+SIND=1023", "OK", NO_EAT_OK, "No response from GSM, must be on a non-GSM node\r\n", 30000);
 	if (!gsmReady())
 		return -1;
 
 	UART_writePolling(uartPC, CSTR("Verifying GPRS attachment\r\n"));
-	if (CMD_GSM_VERIFY("AT+CGATT?", "+CGATT: 1", EAT_OK,
-			GSM_READ_DEFAULT_TIMEOUT_MS)) {
+	if (CMD_GSM_VERIFY("AT+CGATT?", "+CGATT: 1",
+			GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_EAT_OK)) {
 		// Cell not attached
 		UART_writePolling(uartPC, CSTR("Not attached, attaching GPRS now\r\n"));
-		CMD_GSM_RET_ON_FAILURE("AT+CGATT=1", "OK", NO_EAT_OK,
-				"Failed to attach GPRS\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+		CMD_GSM_RET_ON_FAILURE("AT+CGATT=1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+				"Failed to attach GPRS\r\n");
 	}
 
 	UART_writePolling(uartPC, CSTR("Verifying network connection\r\n"));
-	CMD_GSM_RET_ON_FAILURE("AT+CREG?", "+CREG: 0,1", EAT_OK,
-			"Not registered with network\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+	CMD_GSM_RET_ON_FAILURE("AT+CREG?", "+CREG: 0,1", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_EAT_OK,
+			"Not registered with network\r\n");
 
 	// Can't set this twice (just fyi)
+	// TODO: check before setting
 	UART_writePolling(uartPC, CSTR("Setting PDP context\r\n"));
-	CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK", NO_EAT_OK,
-			"Failed to set PDP context\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
-	CMD_GSM_RET_ON_FAILURE("AT+CGACT=1,1", "OK", NO_EAT_OK,
-			"Failed to activate PDP context\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+	CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"breadnet\"", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+			"Failed to set PDP context\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+CGACT=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+			"Failed to activate PDP context\r\n");
 
 	UART_writePolling(uartPC, CSTR("GSM Setup Finished\r\n"));
 
@@ -406,8 +500,8 @@ int gsmUARTReconfig() {
 	UART_Handle uartGSMTmp;
 
 	// max GSM baud 460800
-	CMD_GSM_RET_ON_FAILURE("AT+IPR=115200", "OK", NO_EAT_OK,
-			"Failed to reconfigure gsmUART\r\n", 30000);
+	CMD_GSM_RET_ON_FAILURE("AT+IPR=115200", "OK", 3000, CMD_F_NONE,
+			"Failed to reconfigure gsmUART\r\n");
 
 	uartGSMParams.baudRate = 115200;
 	uartGSMTmp = UART_open(Board_UART1, &uartGSMParams);
@@ -452,20 +546,19 @@ void itoa(int n, char s[]) {
 
 int requestGET() {
 	char *data = "GET / HTTP/1.1\r\nHost: google.com\r\n\r\n";
-	//char *data = "G";
 
 	UART_writePolling(uartPC, CSTR("Connecting to Google\r\n"));
 
-	if (CMD_GSM_VERIFY_N("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", EAT_OK,
-			3000)) {
+	if (CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", 3000, CMD_F_EAT_OK | CMD_F_CMP_N)) {
 		CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80",
-				"OK", NO_EAT_OK, "TCP configuration failed\r\n",
-				GSM_READ_DEFAULT_TIMEOUT_MS);
-		CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", NO_EAT_OK,
-				"TCP connect failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
+				"OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE, "TCP configuration failed\r\n");
+		CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+				"TCP connect failed\r\n");
+		// TODO: make sure we're actually connected
+		cmdGSM(CSTR("AT+SDATASTATUS=1"));
 	}
 
-	// get th length of the data, as both an int and string
+	// get the length of the data, as both an int and string
 	int datalen = strlen(data);
 	char datalen_str[32] = { 0 };
 	itoa(datalen, datalen_str);
@@ -473,53 +566,68 @@ int requestGET() {
 	char sendstring[128] = { 0 };
 	strcpy(sendstring, "AT+SDATATSEND=1,");
 	strcpy(sendstring + strlen(sendstring), datalen_str);
+	// done getting length
 
-	//snprintf(sendstring, 128, "AT+SDATATSEND=1,%i", datalen);
-
-
-	if (cmdVerifyResponse(sendstring, strlen(sendstring), CSTR("> "), NO_EAT_OK,
-	GSM_READ_DEFAULT_TIMEOUT_MS, 0)) {
+	if (cmdVerifyResponse(sendstring, strlen(sendstring), CSTR("> "), GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE)) {
 		UART_writePolling(uartPC, CSTR("Request to GSM failed\r\n"));
 		return -1;
 	}
-	//CMD_GSM_RET_ON_FAILURE("AT+SDATATSEND=1," DATALEN, "> ", NO_EAT_OK, "Request to GSM failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
 
-	// This is pretty dangerous and stupid, but so much faster than a full copy and easier than two writes
-	//data[datalen] = CTRLZ_C;
+	if (cmdVerifyResponse(data, datalen, CSTR("OK"), GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_DATA)) {
+		UART_writePolling(uartPC, CSTR("Entering data failed\r\n"));
+		return -1;
+	}
 
-	clearGSMResponse();
-	char ctlz = (char)26;
-	UART_writePolling(uartPC, data, datalen);
-	UART_writePolling(uartGSM, data, datalen);
-	int i = 0;
-	while (i < 1000000)
-		i++;
-	UART_writePolling(uartPC, &ctlz, 1);
-	UART_writePolling(uartGSM, &ctlz, 1);
-	waitForGSMResponse(NULL, GSM_READ_DEFAULT_TIMEOUT_MS); // OK
+	CMD_GSM_RET_ON_FAILURE(NULL, "+STCPD:1", 10000, CMD_F_NONE, "No data response\r\n");
 
-//	if (cmdVerifyResponse(data, datalen+1, CSTR("OK"), NO_EAT_OK, GSM_READ_DEFAULT_TIMEOUT_MS, 0)) {
-//		UART_writePolling(uartPC, CSTR("Entering data failed\r\n"));
-//		UART_writePolling(uartGSM, CTRLZ, 1);
-////		CMD_GSM_RET_ON_FAILURE(CTRLZ, "OK", NO_EAT_OK, "End CTRLZ didn't help\r\n",
-////				GSM_READ_DEFAULT_TIMEOUT_MS);
-//	}
-
-	//data[datalen] = '\0';
-	//CMD_GSM_RET_ON_FAILURE(DATA CTRLZ, "OK", NO_EAT_OK, "Entering data failed\r\n", GSM_READ_DEFAULT_TIMEOUT_MS);
-
-	CMD_GSM_RET_ON_FAILURE(NULL, "+STCPD:1", NO_EAT_OK, "No data response\r\n",
-			10000);
-
-	while (!cmdVerifyResponse(CSTR("AT+SDATATREAD=1"), CSTR("+CME ERROR: 4"), NO_EAT_OK, GSM_READ_DEFAULT_TIMEOUT_MS, 0)) {
+	while (!cmdVerifyResponse(CSTR("AT+SDATATREAD=1"), CSTR("+CME ERROR: 4"), GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE)) {
 
 	}
 
 	return 0;
 }
 
+void executePCCmd(char *cmd, int cmdlen) {
+	if (!strncmp(cmd, "!", 1)) {
+		cmd++;
+		if (!strcmp(cmd, "a")) {
+			cmdGSM(CSTR("AT"));
+		} else if (!strcmp(cmd, "t")) {
+			cmdGSM(CSTR("AT+SIND?"));
+		} else if (!strcmp(cmd, "s")) {
+			if (setupGSM())
+				UART_writePolling(uartPC, CSTR("Failed to setup GSM\r\n"));
+		} else if (!strcmp(cmd, "g")) {
+			if (requestGET())
+				UART_writePolling(uartPC, CSTR("GET attempt failed\r\n"));
+		} else if (!strcmp(cmd, "u")) {
+			if (gsmUARTReconfig())
+				UART_writePolling(uartPC,
+						CSTR("Failed reconfigure GSM UART\r\n"));
+		} else if (!strcmp(cmd, "b")) {
+			cmdGSM(CSTR("AT+IPR?"));
+		} else if (!strcmp(cmd, ESC)) {
+			UART_writePolling(uartGSM, CSTR(ESC));
+		} else if (!strcmp(cmd, CTRLZ)) {
+			UART_writePolling(uartGSM, CSTR(CTRLZ));
+		} else if (!strcmp(cmd, "n")) {
+			CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", 3000,
+								CMD_F_NONE | CMD_F_CMP_N);
+		} else {
+			UART_writePolling(uartPC, CSTR("Unknown PC command"));
+		}
+	} else if (!strncmp(cmd, "@", 1)) {
+		cmd++;
+		UART_writePolling(uartGSM, cmd, cmdlen);
+		UART_writePolling(uartGSM, "\r\n", 2);
+	} else {
+		UART_writePolling(uartPC, CSTR("Unknown command snuck through"));
+	}
+}
+
 void gsmTask(UArg arg0, UArg arg1) {
-	char input;
+	char input[32];
+	int len;
 
 	int timerFail = setupTimer();
 	setupUART();
@@ -534,61 +642,19 @@ void gsmTask(UArg arg0, UArg arg1) {
 
 	while (1) {
 		// Read from all the UARTS
-		UART_read(uartPC, &input, 1);
-		if (input == '!') {
-			UART_writePolling(uartPC, CSTR("\r\n"));
-			// toggle command mode
-			if (commandModeOn) {
-				UART_writePolling(uartPC, CSTR("Turning command mode off\r\n"));
-				commandModeOn = 0;
-			} else {
-				UART_writePolling(uartPC, CSTR("Turning command mode on\r\n"));
-				commandModeOn = 1;
-			}
-			input = '\0';
-		} else if (!commandModeOn) {
-			if (input == 'a') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				cmdGSM(CSTR("AT"));
-				input = '\0';
-			} else if (input == 't') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				cmdGSM(CSTR("AT+SIND?"));
-				input = '\0';
-			} else if (input == 's') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				if (setupGSM())
-					UART_writePolling(uartPC, CSTR("Failed to setup GSM\r\n"));
-				input = '\0';
-			} else if (input == 'g') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				if (requestGET())
-					UART_writePolling(uartPC, CSTR("GET attempt failed\r\n"));
-				input = '\0';
-			} else if (input == 'u') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				if (gsmUARTReconfig())
-					UART_writePolling(uartPC,
-							CSTR("Failed reconfigure GSM UART\r\n"));
-				input = '\0';
-			} else if (input == 'b') {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				cmdGSM(CSTR("AT+IPR?"));
-				input = '\0';
-			} else if (input == ESC_C) {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				UART_writePolling(uartGSM, CSTR(ESC));
-				input = '\0';
-			} else if (input == CTRLZ_C) {
-				UART_writePolling(uartPC, CSTR("\r\n"));
-				UART_writePolling(uartGSM, CSTR(CTRLZ));
-				input = '\0';
-			} else if (input == 'n') {
-				CMD_GSM_VERIFY_N("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", EAT_OK,
-									3000);
-				input = '\0';
-			}
+		if (UART_control(uartPC, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS)
+			UART_read(uartPC, &input, len);
+		else
+			UART_read(uartPC, &input, 1);
+
+		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS)
+			UART_read(uartGSM, &input, len);
+		else
+			UART_read(uartGSM, &input, 1);
+
+		if (pcCmdReady()) {
+			executePCCmd((char *)pcCmd, pcCmdLen);
+			clearPCCmd();
 		}
-		UART_read(uartGSM, &input, 1);
 	}
 }
