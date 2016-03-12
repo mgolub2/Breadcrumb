@@ -328,7 +328,7 @@ void setupUART() {
 	uartPCParams.readCallback = &pcReadUARTCallback;
 	uartPCParams.writeDataMode = UART_DATA_BINARY;
 	uartPCParams.readDataMode = UART_DATA_BINARY;
-	uartPCParams.baudRate = 9600;
+	uartPCParams.baudRate = 115200;
 	uartPC = UART_open(Board_UART0, &uartPCParams);
 
 	if (uartPC == NULL) {
@@ -555,7 +555,7 @@ int requestGET() {
 		CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
 				"TCP connect failed\r\n");
 		// TODO: make sure we're actually connected
-		cmdGSM(CSTR("AT+SDATASTATUS=1"));
+		while (!CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1,0102", 3000, CMD_F_EAT_OK | CMD_F_CMP_N));
 	}
 
 	// get the length of the data, as both an int and string
