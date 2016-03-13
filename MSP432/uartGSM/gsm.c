@@ -140,47 +140,9 @@ void pcReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 
 		processed++;
 	}
-
-//	if (count != UART_ERROR && count > 0) {
-//		// Write the data to the PC too
-//		UART_writePolling(uartPC, buf, count);
-//
-//		if (commandModeOn && ((char*) buf)[0] != '!')
-//			// Write the data to the GSM
-//			UART_writePolling(uartGSM, buf, count);
-//	}
 }
 
-#define GSM_MAX_RES_LEN 256
-volatile char gsmRes[GSM_MAX_RES_LEN] = { 0 };
-volatile char gsmResCur[GSM_MAX_RES_LEN] = { 0 };
-volatile unsigned gsmResLen = 0;
-// True if the result was truncated in the response buffer
-volatile unsigned resTrunc = 0;
-enum GSM_RES_STATES {
-	GSM_WAITING_FOR_START_CR,
-	GSM_WAITING_FOR_START_LF,
-	GSM_WAITING_FOR_END_CR,
-	GSM_WAITING_FOR_END_LF,
-	GSM_WAITING_FOR_END_SPACE // only during data entry mode
-};
-volatile enum GSM_RES_STATES gsmResponseState = GSM_WAITING_FOR_START_CR;
-
-int gsmResponseReady() {
-	return gsmResponseState == GSM_WAITING_FOR_START_CR && gsmResLen > 0;
-}
-
-void clearGSMResponseSafe() {
-	gsmResLen = 0;
-	resTrunc = 0;
-}
-
-void clearGSMResponse() {
-	clearGSMResponseSafe();
-	// desperate
-	gsmResponseState = GSM_WAITING_FOR_START_CR;
-}
-
+/********* TIMER TIMEOUTS START ***********/
 #define GSM_READ_MAX_TIMEOUT_MS 30000
 #define GSM_READ_DEFAULT_TIMEOUT_MS 5000
 Timer_Handle gsmReadTimer;
@@ -188,6 +150,8 @@ volatile int gsmReadTimeout = 0;
 void gsmReadTimeoutIsr(UArg arg) {
 	if (gsmReadTimeout < GSM_READ_MAX_TIMEOUT_MS)
 		gsmReadTimeout++;
+	else
+		Timer_stop(gsmReadTimer);
 }
 
 inline int gsmReadTimedout(int timeout_ms) {
@@ -201,6 +165,85 @@ inline void gsmReadTimeoutReset() {
 	gsmReadTimeout = 0;
 }
 
+#define GSM_RES_MAX_TIMEOUT 1
+Timer_Handle gsmResTimer;
+volatile int gsmResTimeout = 0;
+void gsmResTimeoutIsr(UArg arg) {
+	if (gsmResTimeout < GSM_RES_MAX_TIMEOUT)
+		gsmResTimeout++;
+	else
+		Timer_stop(gsmResTimer);
+}
+
+inline int gsmResTimedout() {
+	return gsmResTimeout >= GSM_RES_MAX_TIMEOUT ;
+}
+
+inline void gsmResTimeoutReset() {
+	gsmResTimeout = 0;
+}
+
+/********* TIMER TIMEOUTS END ***********/
+
+/********* GSM RESPONSE PARSING START ***********/
+// holds the last four characters, in an int for shifting purposes
+int32_t gsmLastFour = ('\r' << 8) | '\n';
+int32_t gsmCmdSeparator = ('\r' << 24) | ('\n' << 16) | ('\r' << 8) | '\n'; 
+int32_t gsmCmdSeparatorData = ('\r' << 24) | ('\n' << 16) | ('>' << 8) | ' '; 
+int32_t gsmCmdSeparatorTimeout = ('\r' << 8) | '\n';
+int32_t gsmCmdSeparatorTimeoutFlag = 0xFFFF;
+
+#define GSM_MAX_RES_LEN 256
+volatile char gsmRes[GSM_MAX_RES_LEN] = { 0 };
+volatile unsigned gsmResLen = 0;
+volatile unsigned gsmResTrunc = 0;
+
+int gsmResponseReady() {
+	return (gsmLastFour == gsmCmdSeparatorData || (gsmResTimedout() && ((gsmLastFour & gsmCmdSeparatorTimeoutFlag) == gsmCmdSeparatorTimeout))) && gsmResLen > 0;
+}
+
+void clearGSMResponse() {
+	gsmResLen = 0;
+	gsmResTrunc = 0;
+}
+
+#define GSM_RES_RING_LEN 4
+volatile int resRingStart = 0;
+volatile int resRingStop = 0;
+char resRing[GSM_RES_RING_LEN][GSM_MAX_RES_LEN];
+unsigned resLenRing[GSM_RES_RING_LEN];
+
+void parseGSMResponse(void *buf, size_t count) {
+	Timer_stop(gsmResTimer);
+	gsmResTimeoutReset();
+
+	char *gsmRes = resRingStop
+
+	int processed = 0;
+	while (processed < count) {
+		char cur = ((char *) buf)[processed];
+		
+		if (gsmLastFour == gsmCmdSeparator || gsmLastFour == gsmCmdSeparatorData)
+			clearGSMResponse();
+
+		gsmLastFour <<= 8;
+		gsmLastFour |= (int32_t)cur;
+
+		// copy
+		if (gsmResLen == GSM_MAX_RES_LEN - 1)
+			gsmResTrunc = 1;
+
+		gsmRes[gsmResLen] = cur;
+		gsmResLen++;
+
+		processed++;
+	}
+
+	gsmRes[gsmResLen] = '\0';
+	Timer_start(gsmResTimer);
+}
+/********* GSM RESPONSE PARSING END ***********/
+
 // res MUST have length = GSM_MAX_RES_LEN
 // returns -1 on a timeout
 int waitForGSMResponse(char *res, int timeout_ms) {
@@ -212,7 +255,7 @@ int waitForGSMResponse(char *res, int timeout_ms) {
 		if (gsmReadTimedout(timeout_ms)) {
 			Timer_stop(gsmReadTimer);
 			gsmReadTimeoutReset();
-			clearGSMResponse();
+			//clearGSMResponse();
 			if (res != NULL)
 				res[0] = '\0';
 
@@ -228,100 +271,22 @@ int waitForGSMResponse(char *res, int timeout_ms) {
 	}
 	Timer_stop(gsmReadTimer);
 
-	if (res != NULL)
-		strcpy(res, (const char *) gsmRes);
+	if (res != NULL) {
+		// exclude the \r\n when possible (every time except data entry)
+		if (gsmResLen > 2) {
+			// we don't just have \r\n, but rather \r\n\0
+			strncpy(res, (const char *) gsmRes, gsmResLen - 2);
+			res[gsmResLen-1] = '\0';
+		} else {
+			strncpy(res, (const char *) gsmRes, gsmResLen);
+			res[gsmResLen] = '\0';
+		}
+	}
 
-	clearGSMResponse();
+	//clearGSMResponse();
 	return 0;
 }
 
-void parseGSMResponse(void *buf, size_t count) {
-	int processed = 0;
-	while (processed < count) {
-		char cur = ((char *) buf)[processed];
-		if (cur == '\0') {
-			processed++;
-			continue;
-		}
-		if (gsmResponseState == GSM_WAITING_FOR_START_CR) {
-			if (cur == CR_C) {
-				gsmResponseState = GSM_WAITING_FOR_START_LF;
-			} else if (cur == '+') {
-				// This is necessary for multi-line responses, e.g. "AT+CGDCONT?"
-				
-				// copy
-				if (gsmResLen == GSM_MAX_RES_LEN - 1) {
-					resTrunc = 1;
-					break;
-				}
-				gsmRes[gsmResLen] = cur;
-				gsmResLen++;
-
-				gsmResponseState = GSM_WAITING_FOR_END_CR;
-				// reset the response
-				clearGSMResponseSafe();
-			}
-		} else if (gsmResponseState == GSM_WAITING_FOR_START_LF) {
-			if (cur == LF_C) {
-				gsmResponseState = GSM_WAITING_FOR_END_CR;
-				// reset the response
-				clearGSMResponseSafe();
-			} else if (cur != CR_C) {
-				gsmResponseState = GSM_WAITING_FOR_START_CR;
-			}
-		} else if (gsmResponseState == GSM_WAITING_FOR_END_CR) {
-			if (cur == CR_C) {
-				gsmResponseState = GSM_WAITING_FOR_END_LF;
-			} else {
-				// copy
-				if (gsmResLen == GSM_MAX_RES_LEN - 1) {
-					resTrunc = 1;
-					break;
-				}
-				gsmRes[gsmResLen] = cur;
-				gsmResLen++;
-
-				if (cur == '>' && gsmResLen == 1)
-					gsmResponseState = GSM_WAITING_FOR_END_SPACE;
-				gsmRes[gsmResLen] = '\0';
-			}
-		} else if (gsmResponseState == GSM_WAITING_FOR_END_LF) {
-			if (cur == LF_C) {
-				gsmResponseState = GSM_WAITING_FOR_START_CR;
-				gsmRes[gsmResLen] = '\0';
-			} else {
-				// copy
-				if (gsmResLen == GSM_MAX_RES_LEN - 1) {
-					resTrunc = 1;
-					break;
-				}
-				gsmRes[gsmResLen] = cur;
-				gsmResLen++;
-
-				if (cur != CR_C)
-					gsmResponseState = GSM_WAITING_FOR_END_CR;
-			}
-		} else if (gsmResponseState == GSM_WAITING_FOR_END_SPACE) {
-			if (cur != LF_C && cur != CR_C) {
-				// copy
-				if (gsmResLen == GSM_MAX_RES_LEN - 1) {
-					resTrunc = 1;
-					break;
-				}
-				gsmRes[gsmResLen] = cur;
-				gsmResLen++;
-			}
-
-			if (cur == ' ' && gsmResLen == 2) {
-				gsmResponseState = GSM_WAITING_FOR_START_CR;
-				gsmRes[gsmResLen] = '\0';
-			} else {
-				gsmResponseState = GSM_WAITING_FOR_END_CR;
-			}
-		}
-		processed++;
-	}
-}
 
 void gsmReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR && count > 0) {
@@ -484,14 +449,10 @@ int setupGSM() {
 	cmdGSM(CSTR("AT+CGDCONT?"));
 	if (waitForGSMResponse(res, 1000))
 		return -1;
-	if (waitForGSMResponse(res, 1000))
-		return -1;
 
-	// these checks could check even less of res then already doing, 
-	// but this is more readable
 	unsigned n = 0;
 	while (n < GSM_MAX_RES_LEN && !strncmp(res+n, CSTR("+CGDCONT:"))) {
-		if (res[n+9] == '1') {
+		if (res[n+sizeof("+CGDCONT:")-1] != '1') {
 			while (res[n] != '\n') {
 				if (res[n] == '\0')
 					return -1;
@@ -501,7 +462,7 @@ int setupGSM() {
 
 			n++;
 		} else {
-			if (strncmp(res+n+10, CSTR(",IP," HOST))) {
+			if (strncmp(res+n+sizeof("+CGDCONT:"), CSTR(",IP," HOST))) {
 				UART_writePolling(uartPC, CSTR("Setting PDP context\r\n"));
 				CMD_GSM_RET_ON_FAILURE("AT+CGDCONT=1,\"IP\",\"" HOST "\"", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
 						"Failed to set PDP context\r\n");
@@ -519,7 +480,7 @@ int setupGSM() {
 	return -1;
 }
 
-int setupTimer() {
+int setupTimers() {
 	Timer_Params timerParams;
 	Error_Block eb;
 
@@ -535,7 +496,20 @@ int setupTimer() {
 	gsmReadTimer = Timer_create(Timer_ANY, gsmReadTimeoutIsr, &timerParams,
 			&eb);
 
-	return gsmReadTimer == NULL;
+	// 2.22ms timeout (amount of time to fill up the 32 byte ring buffer
+	// on the msp432 UART at 115200 baud (excluding start/stop bits, so
+	// there's some error). However if we're hitting this timeout then
+	// the ring buffer is about to cycle and realistically it's too
+	// late to do a read and not lose data
+	timerParams.startMode = Timer_StartMode_USER;
+	timerParams.period = 2222;
+	timerParams.periodType = Timer_PeriodType_MICROSECS;
+	timerParams.arg = 1;
+
+	gsmResTimer = Timer_create(Timer_ANY, gsmResTimeoutIsr, &timerParams,
+			&eb);
+
+	return gsmReadTimer == NULL || gsmResTimer == NULL;
 }
 
 int gsmUARTReconfig() {
@@ -669,7 +643,7 @@ void gsmTask(UArg arg0, UArg arg1) {
 	char input[32];
 	int len;
 
-	int timerFail = setupTimer();
+	int timerFail = setupTimers();
 	while(setupUART()) ;
 
 	if (timerFail)
