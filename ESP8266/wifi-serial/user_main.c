@@ -26,10 +26,11 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <lwip/sockets.h>
-#include <esp/uart.>"
+#include <esp/uart.h>
 #include <queue.h>
 #include <dhcpserver.h>
 #include <stdint.h>
+#include <string.h>
 
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
@@ -40,6 +41,7 @@
 #define MAX_CONN 5
 #define PACKET_SIZE 4096
 #define ATT_CHAR '='
+#define NUM_ATT_CHAR 3
 
 //void rx_task(void *pvParameters);
 void wifi_80_task(void *pvParameters);
@@ -59,8 +61,8 @@ void wifi_80_task(void *pvParameters) {
 		 * Currently this is only going to serve a tcp connecection at a time. 
 		 * Put in task perhaps???
 		 */
-		int32 listenfd;
-		int32 ret;
+		int32_t listenfd;
+		int32_t ret;
 		struct sockaddr_in server_addr,remote_addr;
 
 		/* Construct local address structure */
@@ -96,8 +98,8 @@ void wifi_80_task(void *pvParameters) {
         		vTaskDelay(1000/portTICK_RATE_MS);
     		}
 		} while(ret != 0);
-		int32 client_sock;
-		int32 len = sizeof(struct sockaddr_in);
+		int32_t client_sock;
+		int32_t len = sizeof(struct sockaddr_in);
 		for (;;) {
 			/*block here waiting remote connect request*/
    			if ((client_sock = accept(listenfd, (struct sockaddr *)&remote_addr, (socklen_t *)&len)) < 0) {
@@ -124,10 +126,10 @@ void wifi_80_task(void *pvParameters) {
   				while(xQueueReceive(*incoming_queue, &rx_char, SOCKET_WAIT_TIME / portTICK_RATE_MS)) {
   					
   					//printf("\n---\nPacket data: %s \n---\n", packet->tcp_data);
-  					ETS_UART_INTR_DISABLE();
+  					//ETS_UART_INTR_DISABLE();
   					int bytes_written = write(client_sock, rx_char, sizeof(char));
   					int secno = errno;
-  					ETS_UART_INTR_ENABLE();
+  					//ETS_UART_INTR_ENABLE();
   					printf("---hmmm: %d\n---", bytes_written);
   					if (bytes_written > 0) {
   						bytes_written_total += bytes_written; 
@@ -158,7 +160,7 @@ void rx_task(void * pvParameters) {
 	uint8_t attention_count = 0;
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
 	while(1) {
-		char rec_char = getchar()
+		char rec_char = getchar();
         if (rec_char == ATT_CHAR) {
             attention_count++;
             if(attention_count == NUM_ATT_CHAR*2) {
@@ -185,7 +187,7 @@ void configure_wifi() {
     sdk_wifi_set_ip_info(1, &ap_ip);
 
     struct sdk_softap_config ap_config = {
-        .ssid = AP_SSID,
+        .ssid = SSID,
         .ssid_hidden = 0,
         .channel = 3,
         .ssid_len = strlen(SSID),
@@ -213,8 +215,8 @@ void user_init(void)
     	printf("Setting up wifi...");
     };
     incoming_queue = xQueueCreate( 100, sizeof(char) );
-    xTaskCreate(rx_task, "rx_task", 512, &incoming_queue, 2, NULL);
-    xTaskCreate(wifi_80_task, "wifi_80_task", 2048, &incoming_queue, 2, NULL);
+    xTaskCreate(rx_task, (signed char *) "rx_task", 512, &incoming_queue, 2, NULL);
+    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 2048, &incoming_queue, 2, NULL);
     printf("---User init complete!---\n");
 }
 
