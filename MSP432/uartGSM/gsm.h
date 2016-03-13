@@ -8,8 +8,8 @@
 #ifndef UARTGSM_GSM_H_
 #define UARTGSM_GSM_H_
 
-UART_Handle uartPC;
-UART_Handle uartGSM;
+UART_Handle uartPC = NULL;
+UART_Handle uartGSM = NULL;
 
 void gsmTask(UArg arg0, UArg arg1);
 
