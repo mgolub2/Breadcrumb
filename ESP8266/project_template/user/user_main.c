@@ -30,103 +30,51 @@
 #include "lwip/netdb.h"
 #include "uart.h"
 #include "udns.h"
+#include "parse.h"
+#include "errno.h"
 
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
 #define SSID "MSP432_Breadcrumb"
 #define PASSWORD "meepvista2" 
 #define BUFFER_SIZE 5000
+#define SOCKET_WAIT_TIME 3000
+#define MAX_CONN 5
 
 //void rx_task(void *pvParameters);
 void wifi_80_task(void *pvParameters);
 void uart0_rx_intr_handler (void *para);
 void configure_wifi();
-void config_custom_uart0();
 void user_init(void);
 
-/******************************************************************************
- * FunctionName : user_init
- * Description  : entry of user application, init user function here
- * Parameters   : none
- * Returns      : none
-*******************************************************************************/
-
-/*void uart0_rx_intr_handler (void *para) {
-	uint32_t uart_intr_status = READ_PERI_REG(UART_INT_ST(0));
-
-	while (uart_intr_status != 0) {
-		if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
-			while (READ_PERI_REG(UART_STATUS(0)) & (UART_RXFIFO_CNT << UART_RXFIFO_CNT_S)) {
-			    uint8_t recByte = READ_PERI_REG(UART_FIFO(0)) & 0xFF;
-			    //printf("%x\n", recByte);
-			}
-			WRITE_PERI_REG(UART_INT_CLR(0), UART_RXFIFO_FULL_INT_CLR);
-		}
-	uart_intr_status = READ_PERI_REG(UART_INT_ST(0));
-	}
-}
-*/
-
-void rx_task(void *pvParameters) {
-	printf("I'm a rx\n");
-	while(1) {
-    	
-    };
-}
-
-//unsigned char buffer[BUFFER_SIZE]; //= (unsigned char *)malloc(65536); //jesus
-
-/*
-void wifi_raw_task(void *pcParameters) {
-	
-	vTaskDelay(10000/portTICK_RATE_MS);
-
-	int saddr_size , data_size;
-    struct sockaddr saddr;
-    struct in_addr in;
-    printf("Starting raw socket\n");
-    int sock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_IP);
-
-    if(sock_raw < 0) {
-        printf("Socket Error\n");
-        printf("%d\n", sock_raw);
-    }
-
-	while(1) {
-		saddr_size = sizeof saddr;
-        //Receive a packet
-        data_size = recvfrom(sock_raw , buffer , BUFFER_SIZE , 0 , &saddr , &saddr_size);
-        if(data_size <0 )
-        {
-            printf("Recvfrom error , failed to get packets\n");
-        }
-        int i;
-        for (i = 0; i < data_size; i++) {
-        	printf("%x", buffer[i]);
-        }
-        printf("\n*******\n");
-        vTaskDelay(10000/portTICK_RATE_MS);
-	}
-}
-*/
+//xQueueHandle incoming_queue;// = xQueueCreate( 1, sizeof( incoming_packet * ) );
 
 void wifi_80_task(void *pvParameters) {
 	printf("I'm a tx\n");
-	int32 listenfd;
-	int32 ret;
-	struct sockaddr_in server_addr,remote_addr;
-	int stack_counter=0;
-	/* Construct local address structure */
-	memset(&server_addr, 0, sizeof(server_addr)); /* Zero out structure */
-	server_addr.sin_family = AF_INET;            /* Internet address family */
-	server_addr.sin_addr.s_addr = INADDR_ANY;   /* Any incoming interface */
-	server_addr.sin_len = sizeof(server_addr);
-	server_addr.sin_port = htons(SERVER_PORT); /* Local port */
+	incoming_queue = xQueueCreate( 100, sizeof( char * ) );
+	printf("Handle in wifi 80: %p\n", &incoming_queue);
+	if (incoming_queue == 0) {
+		printf("Failed to create queue!");
+	}
+
 	while(1) {
 		/* Create socket for incoming connections 
 		 * Currently this is only going to serve a tcp connecection at a time. 
 		 * Put in task perhaps???
 		 */
+		int32 listenfd;
+		int32 ret;
+		struct sockaddr_in server_addr,remote_addr;
+
+		/* Construct local address structure */
+		memset(&server_addr, 0, sizeof(server_addr)); /* Zero out structure */
+		server_addr.sin_family = AF_INET;            /* Internet address family */
+		server_addr.sin_addr.s_addr = INADDR_ANY;   /* Any incoming interface */
+		server_addr.sin_len = sizeof(server_addr);
+		server_addr.sin_port = htons(SERVER_PORT); /* Local port */
+
+		char recv_buf[PACKET_SIZE];
+
 		do {
 			listenfd = socket(AF_INET, SOCK_STREAM, 0);
 			if (listenfd == -1) {
@@ -139,15 +87,15 @@ void wifi_80_task(void *pvParameters) {
      		ret = bind(listenfd, (struct sockaddr *)&server_addr,
 			sizeof(server_addr));
      		if (ret != 0) {
-          		//printf("ESP8266 TCP server task > bind fail\n”);
+          		printf("ESP8266 TCP server task > bind fail\n");
           		vTaskDelay(1000/portTICK_RATE_MS);
      		}
  		} while(ret != 0);
  		do {
 	    	/* Listen to the local connection */
-	    	ret = listen(listenfd, 1); //changed from MAX_CONN to 1???
+	    	ret = listen(listenfd, MAX_CONN); //changed from MAX_CONN to 1???
     		if (ret != 0) {
-        		//printf("ESP8266 TCP server task > failed to set listen queue!\n");
+        		printf("ESP8266 TCP server task > failed to set listen queue!\n");
         		vTaskDelay(1000/portTICK_RATE_MS);
     		}
 		} while(ret != 0);
@@ -164,48 +112,50 @@ void wifi_80_task(void *pvParameters) {
 			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
 			//printf("%s\n", );
 			//How to limit phone to 128 byet packet???
-			char *recv_buf = (char *)zalloc(PACKET_SIZE); //can this be larger...
+			//char *recv_buf = (char *)zalloc(PACKET_SIZE); //can this be larger...
 			uint32_t recbytes;
-			while ((recbytes = read(client_sock , recv_buf, PACKET_SIZE)) > 0) {
-      			recv_buf[recbytes] = 0;
-      			printf("###%s,%d,%s,###\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port), recv_buf);
-      			//printf("ESP8266 TCP server task > read data success %d!\nESP8266 TCP server task > %s\n", recbytes, recv_buf);
+			uint32_t readBytes = 0;
+			while ((recbytes = read(client_sock , recv_buf+readBytes, PACKET_SIZE-readBytes)) > 0) {
+      			recv_buf[recbytes] = 0;	
+      			readBytes+= recbytes;
 			}
-			//printf("Free'd buffer!");
-			free(recv_buf);
-			if (recbytes <= 0) {
-				//printf("ESP8266 TCP server task > read data fail!\n");
-				close(client_sock);
+			printf("###%s,%d,%s###\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port), recv_buf);
+  			if (incoming_queue != 0) {
+				char * rx_char;
+				printf("---Waiting for response...---\n");
+				int bytes_written_total = 0;
+  				while(xQueueReceive(incoming_queue, &rx_char, SOCKET_WAIT_TIME / portTICK_RATE_MS)) {
+  					
+  					//printf("\n---\nPacket data: %s \n---\n", packet->tcp_data);
+  					ETS_UART_INTR_DISABLE();
+  					int bytes_written = write(client_sock, rx_char, sizeof(char));
+  					int secno = errno;
+  					ETS_UART_INTR_ENABLE();
+  					printf("---hmmm: %d\n---", bytes_written);
+  					if (bytes_written > 0) {
+  						bytes_written_total += bytes_written; 
+  					}
+  					else {
+  						printf("ERROR: %d\n", secno);
+  					}
+  					//printf("!--Bytes written: %d--!\n", bytes_written);
+  					//free(packet);
+  				}
+  				printf("!--Bytes written: %u--!\n", bytes_written_total);
+  			}
+			//free(recv_buf);
+  			uint32_t i;
+			for(i = 0; i < PACKET_SIZE; i++) {
+				recv_buf[i] = 0;
 			}
+			close(client_sock);
+			printf("---Closed socket---");
+			vTaskDelay(1000 / portTICK_RATE_MS);
 		}
+		printf("---UH OH----\n");
 	}
 }
 
-// ICACHE_FLASH_ATTR 
-/*
-void config_custom_uart0() {
-	//Configure uart 0 how we want. 
-	UART_ConfigTypeDef uart_config;
-	uart_config.baud_rate = BIT_RATE_115200;
-	uart_config.data_bits = UART_WordLength_8b;
-	uart_config.parity = USART_Parity_None;
-	uart_config.stop_bits = USART_StopBits_1;
-	uart_config.flow_ctrl = USART_HardwareFlowControl_None;
-	uart_config.UART_RxFlowThresh = 120;
-	uart_config.UART_InverseMask  = UART_None_Inverse;
-	UART_ParamConfig(UART0, &uart_config);
-	UART_IntrConfTypeDef uart_intr;
-	uart_intr.UART_IntrEnMask = UART_RXFIFO_TOUT_INT_ENA | UART_FRM_ERR_INT_ENA
-	| UART_RXFIFO_FULL_INT_ENA | UART_TXFIFO_EMPTY_INT_ENA;
-	uart_intr.UART_RX_FifoFullIntrThresh = 10;
-	uart_intr.UART_RX_TimeOutIntrThresh = 2;
-	uart_intr.UART_TX_FifoEmptyIntrThresh = 20;
-	//UART_IntrConfig(UART0, &uart_intr);
-	UART_SetPrintPort(UART0);
-	//UART_intr_handler_register(uart0_rx_intr_handler, NULL);
-	//ETS_UART_INTR_ENABLE();
-}
-*/
 
 void configure_wifi() {
 	struct softap_config *config = (struct softap_config *)zalloc(sizeof(struct

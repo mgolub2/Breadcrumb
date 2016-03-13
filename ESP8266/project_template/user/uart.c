@@ -29,7 +29,9 @@
 #include "freertos/queue.h"
 
 #include "uart.h"
-#include "parse.h"
+//#include "parse.h"
+
+
 
 enum {
     UART_EVENT_RX_CHAR,
@@ -346,8 +348,9 @@ UART_IntrConfig(UART_Port uart_no,  UART_IntrConfTypeDef *pUARTIntrConf)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), pUARTIntrConf->UART_IntrEnMask);
 }
 
-char tcp_data[PACKET_SIZE+1];
-uint16 data_index = 0;
+//char tcp_data[PACKET_SIZE+1];
+//uint16 data_index = 0;
+uint8_t attention_count = 0;
 
 LOCAL void
 uart0_rx_intr_handler(void *para)
@@ -367,8 +370,8 @@ uart0_rx_intr_handler(void *para)
         if (UART_FRM_ERR_INT_ST == (uart_intr_status & UART_FRM_ERR_INT_ST)) {
             //printf("FRM_ERR\r\n");
             WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_FRM_ERR_INT_CLR);
-        } else if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
-            printf("full\r\n");
+        } /*else if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
+            //printf("full\r\n");
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
 
@@ -377,35 +380,59 @@ uart0_rx_intr_handler(void *para)
                 buf_idx++;
             }
 
-            WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_FULL_INT_CLR);
-        } else if (UART_RXFIFO_TOUT_INT_ST == (uart_intr_status & UART_RXFIFO_TOUT_INT_ST)) {
+            WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_FULL_INT_CLR);*/
+        else if (UART_RXFIFO_TOUT_INT_ST == (uart_intr_status & UART_RXFIFO_TOUT_INT_ST) || UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST))  {
             //printf("tout\r\n");
             fifo_len = (READ_PERI_REG(UART_STATUS(UART0)) >> UART_RXFIFO_CNT_S)&UART_RXFIFO_CNT;
             buf_idx = 0;
-
-            uint8_t attention_count = 0;
 
             while (buf_idx < fifo_len) {
                 //echo char back remove this for not debug?
                 char rec_char = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
                 //uart_tx_one_char(UART0, rec_char);
                 if (rec_char == ATT_CHAR) {
-                    if (attention_count < NUM_ATT_CHAR) {
-                        attention_count++;
-                    }
-                    else {
+                    //if (attention_count < NUM_ATT_CHAR) {
+                    attention_count++;
+                    //printf("attention_count: %d\n", attention_count);
+                    if(attention_count == NUM_ATT_CHAR*2) {
+                        //printf("Attention count reached...\n");
                         attention_count = 0;
-                        parse(tcp_data, data_index);
+                        //printf("---Parsing packet---\n");
+                        //incoming_packet * packet_ptr = (incoming_packet *) malloc(sizeof(incoming_packet));
+                        //printf("Made it here 1");
+                        //parse(tcp_data, data_index, packet_ptr);
+                        //printf("Packet data: %d, %d}}}}\n", packet_ptr->addr, sizeof(packet_ptr->tcp_data));
+                        //printf("Made it here 2");
+                        //portBASE_TYPE xHigherPriorityTaskWoken;
+                        //printf("Made it here 3");
+                        //xQueueSendFromISR(incoming_queue, &packet_ptr, &xHigherPriorityTaskWoken);
+                        //printf("Made it here 4");
+                        //portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+                        //printf("Sent packet off to queue\n");
                     }
                 }
-                else if (attention_count >= NUM_ATT_CHAR) {
-                    tcp_data[data_index] = rec_char;
-                    data_index++;
+                    //}
+                else {
+                    if (attention_count >= NUM_ATT_CHAR && attention_count < NUM_ATT_CHAR*2) {
+                        //tcp_data[data_index] = rec_char;
+                        //data_index++;
+                        portBASE_TYPE xHigherPriorityTaskWoken;
+                        xQueueSendFromISR(incoming_queue, &rec_char, &xHigherPriorityTaskWoken);
+                        portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+                    }
+                    else{
+                        attention_count = 0;
+                    }
                 }
                 buf_idx++;
             }
-            WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
-            printf("%s\n", tcp_data);
+            if (UART_RXFIFO_FULL_INT_ST == (uart_intr_status & UART_RXFIFO_FULL_INT_ST)) {
+                WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_FULL_INT_CLR);
+            }
+            if (UART_RXFIFO_TOUT_INT_ST == (uart_intr_status & UART_RXFIFO_TOUT_INT_ST)) {
+                WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
+            }
+            //printf("%s\n", tcp_data);
         } else if (UART_TXFIFO_EMPTY_INT_ST == (uart_intr_status & UART_TXFIFO_EMPTY_INT_ST)) {
             printf("empty\n\r");
             WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_TXFIFO_EMPTY_INT_CLR);
@@ -444,7 +471,7 @@ uart_init_new(void)
     UART_SetPrintPort(UART0);
     UART_intr_handler_register(uart0_rx_intr_handler, NULL);
     ETS_UART_INTR_ENABLE();
-
+    printf("Handle in ISR: %p\n", &incoming_queue);
     /*
     UART_SetWordLength(UART0,UART_WordLength_8b);
     UART_SetStopBits(UART0,USART_StopBits_1);

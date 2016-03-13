@@ -38,6 +38,12 @@ extern "C" {
 #define NUM_ATT_CHAR 3
 #define PACKET_SIZE 4096
 
+#include "freertos/queue.h"
+
+
+
+xQueueHandle incoming_queue;
+
 typedef enum {
     UART_WordLength_5b = 0x0,
     UART_WordLength_6b = 0x1,
