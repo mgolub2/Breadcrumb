@@ -22,16 +22,14 @@
  *
  */
 
-#include "esp_common.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "lwip/sockets.h"
-#include "lwip/dns.h"
-#include "lwip/netdb.h"
-#include "uart.h"
-#include "udns.h"
-#include "parse.h"
-#include "errno.h"
+#include <espressif/esp_common.h>
+#include <FreeRTOS.h>
+#include <task.h>
+#include <lwip/sockets.h>
+#include <esp/uart.>"
+#include <queue.h>
+#include <dhcpserver.h>
+#include <stdint.h>
 
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
@@ -40,23 +38,22 @@
 #define BUFFER_SIZE 5000
 #define SOCKET_WAIT_TIME 3000
 #define MAX_CONN 5
+#define PACKET_SIZE 4096
+#define ATT_CHAR '='
 
 //void rx_task(void *pvParameters);
 void wifi_80_task(void *pvParameters);
-void uart0_rx_intr_handler (void *para);
+void rx_task(void *pvParameters);
 void configure_wifi();
 void user_init(void);
 
-//xQueueHandle incoming_queue;// = xQueueCreate( 1, sizeof( incoming_packet * ) );
 
 void wifi_80_task(void *pvParameters) {
-	printf("I'm a tx\n");
-	incoming_queue = xQueueCreate( 100, sizeof( char * ) );
-	printf("Handle in wifi 80: %p\n", &incoming_queue);
+	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
+	printf("---Handle in wifi 80: %p---\n", incoming_queue);
 	if (incoming_queue == 0) {
-		printf("Failed to create queue!");
+		printf("---Failed to create queue!---");
 	}
-
 	while(1) {
 		/* Create socket for incoming connections 
 		 * Currently this is only going to serve a tcp connecection at a time. 
@@ -124,7 +121,7 @@ void wifi_80_task(void *pvParameters) {
 				char * rx_char;
 				printf("---Waiting for response...---\n");
 				int bytes_written_total = 0;
-  				while(xQueueReceive(incoming_queue, &rx_char, SOCKET_WAIT_TIME / portTICK_RATE_MS)) {
+  				while(xQueueReceive(*incoming_queue, &rx_char, SOCKET_WAIT_TIME / portTICK_RATE_MS)) {
   					
   					//printf("\n---\nPacket data: %s \n---\n", packet->tcp_data);
   					ETS_UART_INTR_DISABLE();
@@ -157,48 +154,67 @@ void wifi_80_task(void *pvParameters) {
 }
 
 
-void configure_wifi() {
-	struct softap_config *config = (struct softap_config *)zalloc(sizeof(struct
- 		softap_config));
- 	wifi_softap_get_config(config); // Get soft-AP config first.
-  	sprintf(config->ssid, SSID);
-  	sprintf(config->password, PASSWORD);
-  	config->authmode = AUTH_WPA_WPA2_PSK;
-	config->ssid_len = sizeof(SSID);        // can also be 0
-	config->max_connection = 4;
-	wifi_softap_set_config(config); // Set ESP8266 soft-AP config
-	free(config);
-	wifi_softap_dhcps_stop();  // disable soft-AP DHCP server
-	struct ip_info info;
-	IP4_ADDR(&info.ip, 192, 168, 1, 1); // set IP
-	IP4_ADDR(&info.gw, 192, 168, 1, 1); // set IP
-	IP4_ADDR(&info.netmask, 255, 255, 255, 0); // set netmask
-	wifi_set_ip_info(SOFTAP_IF, &info);
-	struct dhcps_lease dhcp_lease;
-	IP4_ADDR(&dhcp_lease.start_ip, 192, 168, 1, 2);
-	IP4_ADDR(&dhcp_lease.end_ip, 192, 168, 1, 7);
-	wifi_softap_set_dhcps_lease(&dhcp_lease);
-	wifi_softap_dhcps_start(); // enable soft-AP DHCP server
+void rx_task(void * pvParameters) {
+	uint8_t attention_count = 0;
+	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
+	while(1) {
+		char rec_char = getchar()
+        if (rec_char == ATT_CHAR) {
+            attention_count++;
+            if(attention_count == NUM_ATT_CHAR*2) {
+                attention_count = 0;
+            }
+        }
+        else {
+            if (attention_count >= NUM_ATT_CHAR && attention_count < NUM_ATT_CHAR*2) {
+                xQueueSend(*incoming_queue, &rec_char, 0);
+            }
+            else{
+                attention_count = 0;
+            }
+        }
+	}
 }
 
 
+void configure_wifi() {
+	struct ip_info ap_ip;
+    IP4_ADDR(&ap_ip.ip, 192, 168, 1, 1);
+    IP4_ADDR(&ap_ip.gw, 0, 0, 0, 0);
+    IP4_ADDR(&ap_ip.netmask, 255, 255, 255, 0);
+    sdk_wifi_set_ip_info(1, &ap_ip);
+
+    struct sdk_softap_config ap_config = {
+        .ssid = AP_SSID,
+        .ssid_hidden = 0,
+        .channel = 3,
+        .ssid_len = strlen(SSID),
+        .authmode = AUTH_WPA_WPA2_PSK,
+        .password = PASSWORD,
+        .max_connection = 3,
+        .beacon_interval = 100,
+    };
+    sdk_wifi_softap_set_config(&ap_config);
+
+    ip_addr_t first_client_ip;
+    IP4_ADDR(&first_client_ip, 172, 16, 0, 2);
+    dhcpserver_start(&first_client_ip, 4);
+}
+
+static xQueueHandle incoming_queue;
+
 void user_init(void)
 {
-	//config_custom_uart0();
-	uart_init_new();
-	printf("Configuring WiFi\n");
-	//dns_server_task("4");
+	uart_set_baud(0, 115200);
+	printf("---Configuring WiFi---\n");
 	configure_wifi();
-    printf("SDK version:%s\n", system_get_sdk_version());
-    //seperate rx and tx tasks? UART INT based for TX?
-    while(!wifi_set_opmode(SOFTAP_MODE)){
+    printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
+    while(!sdk_wifi_set_opmode(SOFTAP_MODE)){
     	printf("Setting up wifi...");
     };
-    //xTaskCreate(rx_task, "rx_task", 512, NULL, 2, NULL);
-    //xTaskCreate(frame_task. "frame_task", 2048, 2, NULL);
-    xTaskCreate(wifi_80_task, "wifi_80_task", 2048, NULL, 2, NULL);
-    //xTaskCreate(wifi_raw_task, "wifi_raw_task", 2048, NULL, 2, NULL);
-    //xTaskCreate(dns_server_task, "dns_server_task", 512, NULL, 2, NULL);
-    printf("DONE DONE\n");
+    incoming_queue = xQueueCreate( 100, sizeof(char) );
+    xTaskCreate(rx_task, "rx_task", 512, &incoming_queue, 2, NULL);
+    xTaskCreate(wifi_80_task, "wifi_80_task", 2048, &incoming_queue, 2, NULL);
+    printf("---User init complete!---\n");
 }
 
