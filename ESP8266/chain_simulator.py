@@ -53,7 +53,7 @@ def parse(data, serial_socket):
                 with open('hackaday.txt', 'r') as d:
                     data = d.read(100)
                     while data:
-                        serial_socket.write('\b\b\b{0}\b\b\b'.format(data..encode('utf-8')))
+                        serial_socket.write('\b\b\b{0}\b\b\b'.format(data.encode('utf-8')))
                         data = d.read(100)
                     #serial_socket.write('\b\b\b{0}\b\b\b'.format(d.read()).encode('utf-8'))
             else:
