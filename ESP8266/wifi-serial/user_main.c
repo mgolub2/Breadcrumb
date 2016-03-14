@@ -37,14 +37,18 @@
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
 #define SSID "MSP432_Breadcrumb2"
-#define PASSWORD "meepvista2" 
-#define SOCKET_WAIT_TIME 10000
-#define MAX_CONN 5
+#define PASSWORD  "meepvista2" 
+#define SOCKET_WAIT_TIME 5000
+#define MAX_CONN 3
 #define PACKET_SIZE 4096
-#define ATT_CHAR '='
-#define GSM_ATT_CHAR '#'
+#define ATT_CHAR '\b'
+#define GSM_ATT_CHAR '\a'
 #define NUM_ATT_CHAR 3
 
+typedef struct {
+	char data[PACKET_SIZE];
+	uint32_t written;
+} packet;
 
 
 //void rx_task(void *pvParameters);
@@ -108,9 +112,12 @@ void wifi_80_task(void *pvParameters) {
     	//netconn_write(client, buf, strlen(buf), NETCONN_NOCOPY);
     	//char fuck[] = "fuck you\n"; 
     	//netconn_write(client, fuck, strlen(fuck), NETCONN_COPY);
-    	char rx_char;
-    	while(xQueueReceive( *incoming_queue, &rx_char, SOCKET_WAIT_TIME/portTICK_RATE_MS )) {
-    		netconn_write(client, &rx_char, 1, NETCONN_COPY); 
+    	//char rec_char;
+    	packet * msg;
+    	while(xQueueReceive( *incoming_queue, &msg, SOCKET_WAIT_TIME/portTICK_RATE_MS )) {
+    		//printf("--Recieved packet with %d size---\n", msg->written);
+    		netconn_write(client, msg->data, msg->written, NETCONN_COPY);
+    		//netconn_write(client, &rec_char, sizeof(char), NETCONN_COPY); 
     	}
 		netconn_close(client);
     	while((err = netconn_delete(client)) != ERR_OK) {
@@ -127,6 +134,9 @@ void wifi_80_task(void *pvParameters) {
 void rx_task(void * pvParameters) {
 	uint8_t attention_count = 0;
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
+	packet * msg;
+	msg = (packet *) malloc(sizeof(packet));
+	uint32_t packet_size = 0;
 	while(1) {
 		char rec_char = getchar();
         if (rec_char == ATT_CHAR) {
@@ -137,9 +147,27 @@ void rx_task(void * pvParameters) {
         }
         else {
             if (attention_count >= NUM_ATT_CHAR && attention_count < NUM_ATT_CHAR*2) {
-                xQueueSend(*incoming_queue, &rec_char, 0);
+            	//xQueueSend(*incoming_queue, &rec_char, 100/portTICK_RATE_MS);
+            	if(packet_size < PACKET_SIZE) {
+            		msg->data[packet_size] = rec_char;
+            		packet_size++;
+            	}
+            	else{
+            		msg->written = packet_size;
+            		packet_size = 0;
+            		xQueueSend(*incoming_queue, &msg, 100/portTICK_RATE_MS);
+            		free(msg);
+            		msg = (packet *) malloc(sizeof(packet));
+            	}
             }
             else{
+            	if( packet_size != 0) {
+            		msg->written = packet_size;
+            		packet_size = 0;
+            		xQueueSend(*incoming_queue, &msg, 100/portTICK_RATE_MS);
+            		free(msg);
+            		msg = (packet *) malloc(sizeof(packet));
+            	}
                 attention_count = 0;
             }
         }
@@ -148,31 +176,47 @@ void rx_task(void * pvParameters) {
 
 
 void configure_wifi() {
-	struct ip_info ap_ip;
-	sdk_wifi_set_opmode(SOFTAP_MODE);
+	
+	//sdk_wifi_set_opmode(SOFTAP_MODE);
+
+	//struct sdk_softap_config *config = (struct sdk_softap_config *)calloc(1, sizeof(struct sdk_softap_config));
+
+  	//sdk_wifi_softap_get_config(config);
+  	//sprintf(config->ssid, (uint8_t) SSID);
+  	//sprintf(config->password, (uint8_t) PASSWORD);
+  	//config->authmode = AUTH_WPA_WPA2_PSK;
+  	//config->ssid_len =  (uint8_t) strlen(SSID);
+  	//config->max_connection = 4;
+
+
+    struct sdk_softap_config ap_config = {
+        .ssid = SSID,
+        .ssid_hidden = 0,
+        .channel = 1,
+        .ssid_len = strlen(SSID),
+        .authmode = AUTH_OPEN,
+        .password = PASSWORD,
+        .max_connection = (uint8_t) 3,
+        .beacon_interval = 100,
+    };
+
+    sdk_wifi_softap_set_config(&ap_config);
+    //ree(config);
+
+    dhcpserver_stop();
+    struct ip_info ap_ip;
     IP4_ADDR(&ap_ip.ip, 192, 168, 1, 1);
     IP4_ADDR(&ap_ip.gw, 192, 168, 1, 1);
     IP4_ADDR(&ap_ip.netmask, 255, 255, 255, 0);
     sdk_wifi_set_ip_info(1, &ap_ip);
 
-    struct sdk_softap_config ap_config = {
-        .ssid = SSID,
-        .ssid_hidden = 0,
-        .channel = 3,
-        .ssid_len = strlen(SSID),
-        .authmode = AUTH_OPEN,
-        .password = PASSWORD,
-        .max_connection = 5,
-        .beacon_interval = 100,
-    };
-    sdk_wifi_softap_set_config(&ap_config);
-
     ip_addr_t first_client_ip;
     IP4_ADDR(&first_client_ip, 192, 168, 1, 2);
-    dhcpserver_start(&first_client_ip, 6);
+    dhcpserver_start(&first_client_ip, 2);
 }
 
 static xQueueHandle incoming_queue;
+
 
 void user_init(void)
 {
@@ -180,8 +224,11 @@ void user_init(void)
 	uart_set_baud(0, 115200);
 	printf("---Configuring WiFi---\n");
 	configure_wifi();
+	while(!sdk_wifi_set_opmode(SOFTAP_MODE)){
+    	printf("Setting up wifi...");
+    };
     printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
-    incoming_queue = xQueueCreate( 100, sizeof(char) );
+    incoming_queue = xQueueCreate( 1000, sizeof(packet *));
     xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 2, NULL);
     xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 2, NULL);
     printf("---User init complete!---\n");
