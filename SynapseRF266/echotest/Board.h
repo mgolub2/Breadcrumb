@@ -78,14 +78,15 @@ extern "C" {
 
 #define Board_SPI0                  MSP_EXP432P401R_SPIB0
 #define Board_SPI1                  MSP_EXP432P401R_SPIB2
-#define Board_SPI_CC3100            MSP_EXP432P401R_SPIB0
 
 #define Board_UART0                 MSP_EXP432P401R_UARTA0
 #define Board_UART1                 MSP_EXP432P401R_UARTA2
+#define Board_UART3                 MSP_EXP432P401R_UARTA3
 
 #define Board_WATCHDOG0             MSP_EXP432P401R_WATCHDOG
 
 #define Board_WIFI                  MSP_EXP432P401R_WIFI
+#define Board_WIFI_SPI              MSP_EXP432P401R_SPIB0
 
 /* Board specific I2C addresses */
 #define Board_TMP006_ADDR           (0x40)
