@@ -25,133 +25,92 @@
 #include <espressif/esp_common.h>
 #include <FreeRTOS.h>
 #include <task.h>
-#include <lwip/sockets.h>
+#include <lwip/api.h>
+#include <lwip/opt.h>
 #include <esp/uart.h>
 #include <queue.h>
 #include <dhcpserver.h>
 #include <stdint.h>
+#include <netbuf_helpers.h>
 #include <string.h>
 
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
-#define SSID "MSP432_Breadcrumb"
+#define SSID "MSP432_Breadcrumb2"
 #define PASSWORD "meepvista2" 
 #define BUFFER_SIZE 5000
 #define SOCKET_WAIT_TIME 3000
 #define MAX_CONN 5
 #define PACKET_SIZE 4096
 #define ATT_CHAR '='
+#define GSM_ATT_CHAR '#'
 #define NUM_ATT_CHAR 3
+
+
 
 //void rx_task(void *pvParameters);
 void wifi_80_task(void *pvParameters);
 void rx_task(void *pvParameters);
 void configure_wifi();
 void user_init(void);
+void send_att_char();
 
+void send_att_char() {
+	uint8_t char_inc;
+	for (char_inc = 0; char_inc < NUM_ATT_CHAR; char_inc++) {
+        putchar(GSM_ATT_CHAR);
+    }
+}
 
 void wifi_80_task(void *pvParameters) {
+	MEMP_NUM_TCP_PCB = 5;
+	//espconn_tcp_set_max_con(5); //supress max connection notices.
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
+	//espconn_tcp_set_max_con(5);
 	printf("---Handle in wifi 80: %p---\n", incoming_queue);
 	if (incoming_queue == 0) {
 		printf("---Failed to create queue!---");
 	}
+	struct netconn *nc = netconn_new (NETCONN_TCP);
+	if(!nc) {
+		printf("---Status monitor: Failed to allocate socket.---\r\n");
+		return;
+	}
+	printf("---Binding...---\n");
+	netconn_bind(nc, IP_ADDR_ANY, SERVER_PORT);
+	printf("---Bound, starting listen...---\n");
+	netconn_listen(nc);
+	printf("---Listening...---\n");
+  		
 	while(1) {
-		/* Create socket for incoming connections 
-		 * Currently this is only going to serve a tcp connecection at a time. 
-		 * Put in task perhaps???
-		 */
-		int32_t listenfd;
-		int32_t ret;
-		struct sockaddr_in server_addr,remote_addr;
-
-		/* Construct local address structure */
-		memset(&server_addr, 0, sizeof(server_addr)); /* Zero out structure */
-		server_addr.sin_family = AF_INET;            /* Internet address family */
-		server_addr.sin_addr.s_addr = INADDR_ANY;   /* Any incoming interface */
-		server_addr.sin_len = sizeof(server_addr);
-		server_addr.sin_port = htons(SERVER_PORT); /* Local port */
-
-		char recv_buf[PACKET_SIZE];
-
-		do {
-			listenfd = socket(AF_INET, SOCK_STREAM, 0);
-			if (listenfd == -1) {
-				//printf("ESP8266 TCP server task > socket error\n”);
-			 	vTaskDelay(1000/portTICK_RATE_MS);
-			}
-		} while(listenfd == -1);
-		/* Bind to the local port */
- 		do {
-     		ret = bind(listenfd, (struct sockaddr *)&server_addr,
-			sizeof(server_addr));
-     		if (ret != 0) {
-          		printf("ESP8266 TCP server task > bind fail\n");
-          		vTaskDelay(1000/portTICK_RATE_MS);
-     		}
- 		} while(ret != 0);
- 		do {
-	    	/* Listen to the local connection */
-	    	ret = listen(listenfd, MAX_CONN); //changed from MAX_CONN to 1???
-    		if (ret != 0) {
-        		printf("ESP8266 TCP server task > failed to set listen queue!\n");
-        		vTaskDelay(1000/portTICK_RATE_MS);
-    		}
-		} while(ret != 0);
-		int32_t client_sock;
-		int32_t len = sizeof(struct sockaddr_in);
-		for (;;) {
-			/*block here waiting remote connect request*/
-   			if ((client_sock = accept(listenfd, (struct sockaddr *)&remote_addr, (socklen_t *)&len)) < 0) {
-       			//printf("ESP8266 TCP server task > accept fail\n");
-				continue; 
-			}
-
-			//put this in struct perhaps
-			//printf("ESP8266 TCP server task > Client from %s %d\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port));
-			//printf("%s\n", );
-			//How to limit phone to 128 byet packet???
-			//char *recv_buf = (char *)zalloc(PACKET_SIZE); //can this be larger...
-			uint32_t recbytes;
-			uint32_t readBytes = 0;
-			while ((recbytes = read(client_sock , recv_buf+readBytes, PACKET_SIZE-readBytes)) > 0) {
-      			recv_buf[recbytes] = 0;	
-      			readBytes+= recbytes;
-			}
-			printf("###%s,%d,%s###\n", inet_ntoa(remote_addr.sin_addr), htons(remote_addr.sin_port), recv_buf);
-  			if (incoming_queue != 0) {
-				char * rx_char;
-				printf("---Waiting for response...---\n");
-				int bytes_written_total = 0;
-  				while(xQueueReceive(*incoming_queue, &rx_char, SOCKET_WAIT_TIME / portTICK_RATE_MS)) {
-  					
-  					//printf("\n---\nPacket data: %s \n---\n", packet->tcp_data);
-  					//ETS_UART_INTR_DISABLE();
-  					int bytes_written = write(client_sock, rx_char, sizeof(char));
-  					int secno = errno;
-  					//ETS_UART_INTR_ENABLE();
-  					printf("---hmmm: %d\n---", bytes_written);
-  					if (bytes_written > 0) {
-  						bytes_written_total += bytes_written; 
-  					}
-  					else {
-  						printf("ERROR: %d\n", secno);
-  					}
-  					//printf("!--Bytes written: %d--!\n", bytes_written);
-  					//free(packet);
-  				}
-  				printf("!--Bytes written: %u--!\n", bytes_written_total);
-  			}
-			//free(recv_buf);
-  			uint32_t i;
-			for(i = 0; i < PACKET_SIZE; i++) {
-				recv_buf[i] = 0;
-			}
-			close(client_sock);
-			printf("---Closed socket---");
-			vTaskDelay(1000 / portTICK_RATE_MS);
-		}
-		printf("---UH OH----\n");
+		struct netconn *client = NULL;
+    	err_t err = netconn_accept(nc, &client);
+    	printf("---Accpeted connection...---\n");
+    	if ( err != ERR_OK ) {
+      		if(client) {
+      			printf("---ERROR!!:: %d---\n", err);
+				netconn_delete(client);
+      		}
+      		continue;
+    	}
+    	struct netbuf *netbuf;
+    	send_att_char();
+    	netconn_set_recvtimeout(client, 1000/portTICK_RATE_MS);
+    	while((err = netconn_recv(client, &netbuf)) == ERR_OK) {
+    		uint16_t len = netbuf_len(netbuf);
+	        uint16_t offset;
+	        for(offset = 0; offset<len; offset++) {
+	        	putchar(netbuf_read_u8(netbuf, offset));
+        	}
+    	}
+    	send_att_char();
+    	char rx_char;
+    	while(xQueueReceive( *incoming_queue, &rx_char, SOCKET_WAIT_TIME/portTICK_RATE_MS )) {
+    		netconn_write(client, &rx_char, 1, NETCONN_COPY); 
+    	}
+    	netconn_disconnect(nc);
+		netbuf_delete(netbuf);
+    	netconn_delete(client);
 	}
 }
 
@@ -181,8 +140,9 @@ void rx_task(void * pvParameters) {
 
 void configure_wifi() {
 	struct ip_info ap_ip;
+	sdk_wifi_set_opmode(SOFTAP_MODE);
     IP4_ADDR(&ap_ip.ip, 192, 168, 1, 1);
-    IP4_ADDR(&ap_ip.gw, 0, 0, 0, 0);
+    IP4_ADDR(&ap_ip.gw, 192, 168, 1, 1);
     IP4_ADDR(&ap_ip.netmask, 255, 255, 255, 0);
     sdk_wifi_set_ip_info(1, &ap_ip);
 
@@ -193,27 +153,25 @@ void configure_wifi() {
         .ssid_len = strlen(SSID),
         .authmode = AUTH_WPA_WPA2_PSK,
         .password = PASSWORD,
-        .max_connection = 3,
+        .max_connection = 10,
         .beacon_interval = 100,
     };
     sdk_wifi_softap_set_config(&ap_config);
 
     ip_addr_t first_client_ip;
-    IP4_ADDR(&first_client_ip, 172, 16, 0, 2);
-    dhcpserver_start(&first_client_ip, 4);
+    IP4_ADDR(&first_client_ip, 192, 168, 1, 2);
+    dhcpserver_start(&first_client_ip, 6);
 }
 
 static xQueueHandle incoming_queue;
 
 void user_init(void)
 {
+	//system_set_os_print(0);
 	uart_set_baud(0, 115200);
 	printf("---Configuring WiFi---\n");
 	configure_wifi();
     printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
-    while(!sdk_wifi_set_opmode(SOFTAP_MODE)){
-    	printf("Setting up wifi...");
-    };
     incoming_queue = xQueueCreate( 100, sizeof(char) );
     xTaskCreate(rx_task, (signed char *) "rx_task", 512, &incoming_queue, 2, NULL);
     xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 2048, &incoming_queue, 2, NULL);
