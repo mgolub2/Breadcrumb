@@ -7,6 +7,8 @@ import socket
 import re
 import traceback
 import sys
+import subprocess
+
 PORT = '/dev/cu.usbserial-FTZ29WSV'
 #PORT = 'COM3'
 BAUD = 115200
@@ -43,36 +45,13 @@ def loop():
 
 def parse(data, serial_socket):
     try:
-        data_array = data.split(',')
-        '''
-        data_array = data.split(',')
-        #print(data_array)
-        #Index 0 is return IP, index 1 is return port, and index 3 is the http info
-        #print("DATA:   " , data_array[2])
-        host_match = re.search('Host: (\S+)\\r\\n', data_array[2])
+        host_match = re.search('Host: (\S+)\\r\\n', data)
         if host_match:
             host = host_match.group(1)
-            print(host)
-            try:
-                host, port = host.split(':')
-            except ValueError:
-                port = 80
-            print(host, port)
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(4)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.connect((host, int(port)))
-            print("***Proxy connect***")
-            s.send(data_array[2].encode('utf-8'))
-            print("***Proxy send****")
-            rx_data = s.recv(4096)
-            s.shutdown(1)
-            s.close()
-            #print("*****************************Recieved: \n", rx_data, "\n")
-            '''
-            #serial_socket.write('==={0}==='.format(rx_data).encode('ascii'))
-        with open('hackaday.txt', 'r') as d:
-            serial_socket.write('==={0},{1},{2}==='.format(data_array[0], data_array[1], d.read()).encode('ascii'))
+            rx_data = subprocess.check_output(['curl', '-i', host])
+            serial_socket.write('==={0}==='.format(rx_data).encode('ascii'))
+        #with open('hackaday.txt', 'r') as d:
+        #    serial_socket.write('==={0}==='.format(d.read()).encode('utf-8'))
     except Exception as e:
         print(e)
         traceback.print_exc(file=sys.stdout)
