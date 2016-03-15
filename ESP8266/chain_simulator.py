@@ -54,19 +54,24 @@ def parse(data, serial_socket):
                 with open('hackaday.txt', 'r') as d:
                     data = d.read(100)
                     serial_socket.write('\b\b\b'.encode('utf-8'))
+                    #serial_socket.flushOutput()
                     while data:
                         serial_socket.write(data.encode('utf-8'))
+                        #serial_socket.flushOutput()
                         data = d.read(100)
                         if chr(27).encode() in data.encode():
                             print("OH SHIT")
                         print(len(data))
-                        time.sleep(.1)
+                        time.sleep(.01)
                         #print(data)
                     serial_socket.write(chr(27).encode())
+                    #serial_socket.flushOutput()
                     #serial_socket.write('\b\b\b{0}\b\b\b'.format(d.read()).encode('utf-8'))
             else:
                 rx_data = subprocess.check_output(['curl', '-i', host])
-                serial_socket.write('\b\b\b{0}\b\b\b'.format(rx_data).encode('utf-8'))
+                serial_socket.write('\b\b\b'.encode('utf-8'))
+                serial_socket.write(rx_data)
+                serial_socket.write('\b\b\b'.encode('utf-8'))
         #with open('hackaday.txt', 'r') as d:
         #    serial_socket.write('==={0}==='.format(d.read()).encode('utf-8'))
     except Exception as e:
