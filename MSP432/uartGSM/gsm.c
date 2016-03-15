@@ -670,16 +670,24 @@ void itoa(int n, char s[]) {
 
 #define MAX_HOST_LEN 255
 int requestGET() {
+	//char *data = "GET /random.html HTTP/1.1\r\nHost: www.onedollarbolt.com\r\n\r\n";
 	char *data = "GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n";
 	//char *data = "GET / HTTP/1.1\r\nHost: retro.hackaday.com\r\n\r\n";
+	int datalen = strlen(data);
 
 	char *host = data;
-	while (strncmp(host, CSTR("Host: ")))
+	while (strncmp(host, CSTR("Host: "))) {
 		host++;
+		if (host >= data + datalen)
+			return -1;
+	}
 	host += sizeof("Host: ")-1;
 	char *hostend = host;
-	while (*hostend != '\r')
+	while (*hostend != '\r') {
 		hostend++;
+		if (hostend >= data + datalen)
+			return -1;
+	}
 	int hostlen = hostend - host;
 
 #define startsize sizeof("AT+SDATACONF=1,\"TCP\",\"")-1
@@ -725,7 +733,6 @@ int requestGET() {
 	// connected!
 
 	// get the length of the data, as both an int and string
-	int datalen = strlen(data);
 	char datalen_str[32] = { 0 };
 	itoa(datalen, datalen_str);
 
@@ -891,7 +898,7 @@ void gsmTask(UArg arg0, UArg arg1) {
 			char *start = gsmRes;
 			if (!strncmp(start, CSTR("+SDATA"))) {
 				start += sizeof("+SDATA:1,") - 1;
-				while (*(start++) != ',') ;
+				while (start < gsmRes + GSM_MAX_RES_LEN && *(start++) != ',') ;
 			} else if (!strncmp(start, CSTR("+SSTR"))) {
 				start += sizeof("+SSTR:1,") - 1;
 			} else {
@@ -902,6 +909,7 @@ void gsmTask(UArg arg0, UArg arg1) {
 			if (start+len >= gsmRes+GSM_MAX_RES_LEN)
 				continue;
 			UART_writePolling(uartPC, start, len);
+			dataReadyPrint--;
 
 			dataReady--;
 			gsmRes[0] = '\0';
