@@ -1,0 +1,88 @@
+HTTP/1.1 200 OK
+Server: nginx/1.8.1
+Date: Tue, 15 Mar 2016 08:06:56 GMT
+Content-Type: text/html
+Content-Length: 13120
+Connection: keep-alive
+Last-Modified: Tue, 15 Mar 2016 08:00:06 GMT
+Accept-Ranges: bytes
+
+<html>
+<head>
+<title>Hack a day</title>
+</head>
+<body>
+
+<img src="Logo.bmp" align="left">
+<pre>
+   __ __         __            ___           
+  / // /__ _____/ /__  ___ _  / _ \___ ___ __
+ / _  / _ `/ __/  '_/ / _ `/ / // / _ `/ // /
+/_//_/\_,_/\__/_/\_\  \_,_/ /____/\_,_/\_, / 
+retro edition                         /___/ 
+</pre>
+
+<b>Now optimized for embedded devices!</b><br />
+
+<table>
+<tr>
+<td><a href="about.html">About</a></td>
+<td><a href="http://hackaday.com/tag/retro-edition/">Successes</a></td>
+<td><a href="retro.html">Retrocomputing guide</a></td>
+<td><a href="mailto:tips@hackaday.com?Subject=Low-fi edition submission">Email Hackaday</a></td>
+</tr>
+</table>
+
+<hr>			<h2><a href="http://hackaday.com/2008/06/05/building-a-midibox-sid/" rel="bookmark" title="Permanent Link to Building a MIDIbox&nbsp;SID">Building a MIDIbox&nbsp;SID</a></h2>
+				posted Jun 5th 2008 2:30pm by <a href="http://hackaday.com/author/juanaguilar/" title="Posts by Juan Aguilar" rel="author">Juan Aguilar</a><br/>
+				filed under: <a href="http://hackaday.com/category/misc-hacks/" title="View all posts in misc hacks" rel="category tag">misc hacks</a> <br/>
+
+							<p><img width="450" vspace="4" hspace="4" height="287" border="0" src="http://hackadaycom.files.wordpress.com/2008/06/had-midibox-1.jpg?w=450&h=287" alt="" /><br /><a href="http://www.hackaday.com/2007/05/23/mb-6582-diy-c64-based-midi-synth/">We&#8217;ve discussed MIDIboxes before</a> (and <a href="http://cellphones.hackaday.com/2005/01/16/midibox-sid-serious-c64-sound/">once before that</a>), but we&#8217;ve never really told you what goes into them or how to build one. We&#8217;ll take you through the process after the break.</p>
+<p><a href="http://www.subatomicglue.com/sidl0g/">This particular MIDIbox</a> by [Subatomic] is built on the MIDIbox SID specs <a href="http://www.ucapps.de/midibox_sid.html">originally conceived by [Thorsten Klose]</a> (check out the great sound samples) and <a href="http://www.midibox.org/dokuwiki/wilba_mb_6582">streamlined by [Wilba]</a>. It uses a Commodore 64 case, 8 of its SID chips, and the power supply, but gets most of its other parts from various different sources. The Commodore&#8217;s <a href="http://en.wikipedia.org/wiki/MOS_Technology_SID">SID</a> or Sound Interface Device, was one of the first sound chips available in a personal computer.</p>
+<p><img width="450" vspace="4" hspace="4" height="365" border="0" src="http://hackadaycom.files.wordpress.com/2008/06/had-midibox-2.jpg?w=450&h=365" alt="" /><br />In the worklog, a SID module, the first of four, was built before anything else. Then [Subatomic] opened up the Commodore case and attempted to fit a number of modules into it. For the MIDIbox&#8217;s power, he converted the original Commodore power supply to provide 14VDC and 5VDC, but learned much later that this would only give enough power for 4 SIDs, resulting in a mono MIDIbox. He continued by adding a power board and noting that with the core and SID modules and the audio mixer board, it&#8217;s a tight but workable fit. </p>
+<p>The next several steps involved designing and building the control surface. After creating a mockup and acquiring several components like knobs, LEDs, and a small LCD, [Subatomic] began building many of the necessary control surface PCBs, including the filter control PCB and a few others. </p>
+<p>[Subatomic] went on by going through the painstaking process of creating backlights for the knobs. After that he acquired the custom-made front panel, created the LCD module, and attached it and several PCBs to the panel. The panel was then painted. </p>
+<p>After a little work on the PSU and the rear I/O panel, [Subatomic] prepped some banksticks (external storage accessories; think USB stick forerunners with a female serial jack).</p>
+<p><img vspace="4" hspace="4" border="0" alt="" src="http://hackadaycom.files.wordpress.com/2008/06/had-midibox-6.jpg" /><br />After finishing and gluing the LEDs to the knobs, the panel was finished. At this point Subatomic decided to scrap the SID, core, din and dout modules in favor of a single PCB that does everything. He cut the board to make it fit in the case, cut headers, added resistors, burned out the LCD, did a lot of spot-checking on the wiring, and then he finally added the SIDs to the board. </p>
+<p><img width="450" vspace="4" hspace="4" height="305" border="0" src="http://hackadaycom.files.wordpress.com/2008/06/had-midibox-4.jpg?w=450&h=305" alt="" /><br />He soon zeroed in on the power supply problem that was only routing enough power to 4 SIDs by replacing the malfunctioning C64 PSU with a good one, after which the LCD was also replaced. The wiring diagram above shows how the remaining modules would be wired to the main board.</p>
+<p>The only software work involved adding functions for 2 special buttons to the preexisting firmware and recompiling it. He realized that the MIDIbox was missing a mixed output jack, so he added than and made several minor cosmetic mods. With these final fixes, the MIDIbox SID was completed. If you&#8217;re considering this project, be aware that it&#8217;s a major endeavor with a lot of detail work that took [Subatomic] nearly 3 years to build, but the reward is a slick-looking, fully functional MIDIbox SID of your own. </p>
+<p>[via <a href="http://matrixsynth.blogspot.com/2008/06/midibox-sid.html">Matrixsynth</a>]</p>
+			<h2><a href="http://hackaday.com/2009/11/19/another-stationary-bike-vr-rig/" rel="bookmark" title="Permanent Link to Another stationary bike VR&nbsp;rig">Another stationary bike VR&nbsp;rig</a></h2>
+				posted Nov 19th 2009 12:00pm by <a href="http://hackaday.com/author/mikehackaday/" title="Posts by Mike Szczys" rel="author">Mike Szczys</a><br/>
+				filed under: <a href="http://hackaday.com/category/home-hacks/" title="View all posts in home hacks" rel="category tag">home hacks</a> <br/>
+
+							<p><img class="alignnone size-full wp-image-18542" title="bike-vr-rig" src="http://hackadaycom.files.wordpress.com/2009/11/bike-vr-rig.jpg" alt="" width="470" height="313" /></p>
+<p>[Shingo] shared his implementation of a <a href="http://www.youtube.com/watch?v=DG1FWa-0XrE">stationary bike as a virtual reality</a> interface. This is similar to the <a href="http://hackaday.com/2009/11/11/biking-through-google-street-view/">Google Street View setup</a> we covered a week ago but goes a few steps further. They patched into the bike computer to pick up rotation of the bicycle wheel and added an accelerometer for directional control. This setup can navigate through Street View but the video after the break also details an interface with Google Earth and even the ability to navigate through Second Life, following your avatar as it bikes along with you. The use of a wearable display is far superior to something like the <a href="http://www.surfshelf.com/">SurfShelf</a> and really gives you a goal other than just some cold-weather exercise. So take this idea, patch it into a <a href="http://hackaday.com/2009/10/26/head-mounted-computer/">wearable computer</a> and you&#8217;ve got the exercise setup worthy of the future world we&#8217;ve been promised.</p>
+			<h2><a href="http://hackaday.com/2010/10/31/large-magnets-spark-on-halloween-who-knew/" rel="bookmark" title="Permanent Link to Large magnets spark on Halloween, who&nbsp;knew?">Large magnets spark on Halloween, who&nbsp;knew?</a></h2>
+				posted Oct 31st 2010 12:13pm by <a href="http://hackaday.com/author/jakobgriffith/" title="Posts by Jakob Griffith" rel="author">Jakob Griffith</a><br/>
+				filed under: <a href="http://hackaday.com/category/misc-hacks/" title="View all posts in misc hacks" rel="category tag">misc hacks</a> <br/>
+
+							<p><img class="alignnone size-full wp-image-29994" title="I remember one halloween I went as a mad scientist, and this brings the question: What are you guys going as for Halloween? (I'm going as StarFox...chicks dig fluffy tails)." src="http://hackadaycom.files.wordpress.com/2010/10/4673105709_3266e71b80_b.jpg" alt="" width="470" height="319" /></p>
+<p>This <a href="http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1288424668">overly large magnet</a> certainly completes the mad scientist look (for an even crazier look, take a jar of water with red food coloring and place in one large cauliflower, instant brain in a jar).</p>
+<p>The base of the magnet is painted foam cut with a makeshift hot-knife; to get the magnet sparking [Macegr] laser <a href="http://www.xoxideforums.com/guides-tutorials/55909-guide-acrylic-etching.html">etched acrylic</a> with a fractal pattern and embedded LEDs in the ends of the acrylic. An Arduino handles the flashing LEDs and also produces a 60Hz PWM pulse for the spark&#8217;s hum. The end result is satisfyingly mad, and while practicing your evil ominous laugh catch a video of the magnet after the jump.</p>
+			<h2><a href="http://hackaday.com/2011/02/26/diy-lightning-special-effects/" rel="bookmark" title="Permanent Link to DIY lightning special&nbsp;effects">DIY lightning special&nbsp;effects</a></h2>
+				posted Feb 26th 2011 8:30am by <a href="http://hackaday.com/author/christopernelson/" title="Posts by Chris Nelson" rel="author">Chris Nelson</a><br/>
+				filed under: <a href="http://hackaday.com/category/classic-hacks/" title="View all posts in classic hacks" rel="category tag">classic hacks</a> <br/>
+
+							<p><img class="aligncenter size-large wp-image-36000" title="Lightning-effect-using-camera-flash-units" src="http://hackadaycom.files.wordpress.com/2011/02/lightning-effect-using-camera-flash-units.jpg?w=450&h=333" alt="" width="450" height="333" /></p>
+<p>Halloween may have come and gone but thats no reason not to take a look at <a href="http://www.instructables.com/id/Lightning-effect-using-camera-flash-units/">this</a> neat little special effects setup.  Basically it uses an analogue circuit to monitor an audio signal and triggers some camera flashes using 5V relays.  The idea is that you can play lightning strikes and other spooky sounds, and the system will trigger camera flashes to coincide with the lightning strikes. Adding in some color organs in addition to the camera flashes will dim your lights to help achieve a thunder like effect. Unfortunately there aren&#8217;t any schematics for the color organs (which technically might be just light organs) but that doesn&#8217;t detract from the seemingly well designed analogue signal processing. Check it out in action after the break.</p>
+			<h2><a href="http://hackaday.com/2010/04/29/surface-mount-breakout-boards/" rel="bookmark" title="Permanent Link to Surface mount breakout&nbsp;boards">Surface mount breakout&nbsp;boards</a></h2>
+				posted Apr 29th 2010 9:00am by <a href="http://hackaday.com/author/mikehackaday/" title="Posts by Mike Szczys" rel="author">Mike Szczys</a><br/>
+				filed under: <a href="http://hackaday.com/category/hackit/" title="View all posts in HackIt" rel="category tag">HackIt</a> <br/>
+
+							<p><img class="alignnone size-full wp-image-23625" title="SOIC20W-breakout-board" src="http://hackadaycom.files.wordpress.com/2010/04/soic20w-breakout-board.jpg" alt="" width="470" height="303" /></p>
+<p>We got a hold of some DS3232 RTC chips in a 20-pin SOIC package. We&#8217;d like to have one that is breadboard compatible for easy prototyping but when we searched for SOIC20W breakout board artwork we found none. We used Eagle to design our own and you can see the finished product above which we made <a href="http://hackaday.com/2009/11/09/diy-circuit-etching-video-tutorial/">using the toner transfer method</a> and <a href="http://hackaday.com/2009/01/26/ferric-chloride-etching-chemistry/">cupric chloride</a>.</p>
+<p>You&#8217;ll find the artwork after the break in case you need to make your own breakout board some day. If you know of surface mount breakout board artwork that is freely available please leave the link in the comments for future use, or send it to us on <a href="http://hackaday.com/contact-hack-a-day/">our tips line</a> and we&#8217;ll add it to the post.</p>
+<p>Incidentally, the DS3232 is the same as <a href="http://hackaday.com/2009/10/27/parts-chronodot-rtc-module-ds3231/">the DS3231 used in the ChronoDot</a> but with the addition of some SRAM. We&#8217;ll let you know if we come up with an interesting project for it.</p>
+<p><strong>Update:</strong> We added 28 SSOP to DIP artwork submitted by [Paul Dekker]</p>
+<p><strong>20-PIN SOIC to DIP</strong></p>
+<p><img class="alignnone size-full wp-image-23624" title="so20w-breakout" src="http://hackadaycom.files.wordpress.com/2010/04/so20w-breakout.jpg" alt="" width="400" height="400" /></p>
+<p><strong>28-pin SSOP to DIP</strong> [Thanks Paul Dekker]</p>
+<p><a href="http://hackadaycom.files.wordpress.com/2010/04/28-ssop-dip-etch.png"><img class="alignnone size-large wp-image-23723" title="28-ssop-dip-etch" src="http://hackadaycom.files.wordpress.com/2010/04/28-ssop-dip-etch.png?w=450&h=231" alt="" width="450" height="231" /></a></p>
+
+<hr>
+<center>
+(c) 2014 hackaday.com. All Rights Reserved.
+</center>
+</body>
+</html>
