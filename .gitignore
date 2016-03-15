@@ -1,0 +1,11 @@
+Debug/
+Release/
+.xdchelp
+.config/
+.launches/
+
+*.o
+*.o.dep
+*.map
+*.swp
+*~

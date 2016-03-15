@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configurations XML_version="1.2" id="configurations_0">
+    <configuration XML_version="1.2" id="Texas Instruments XDS110 USB Debug Probe_0">
+        <instance XML_version="1.2" desc="Texas Instruments XDS110 USB Debug Probe_0" href="connections/TIXDS110_Connection.xml" id="Texas Instruments XDS110 USB Debug Probe_0" xml="TIXDS110_Connection.xml" xmlpath="connections"/>
+        <connection XML_version="1.2" id="Texas Instruments XDS110 USB Debug Probe_0">
+            <instance XML_version="1.2" href="drivers/tixds510cs_dap.xml" id="drivers" xml="tixds510cs_dap.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds510cortexM.xml" id="drivers" xml="tixds510cortexM.xml" xmlpath="drivers"/>
+            <property Type="choicelist" Value="3" id="SWD Mode Settings"/>
+            <property Type="choicelist" Value="0" id="dataFileRequired"/>
+            <platform XML_version="1.2" id="platform_0">
+                <instance XML_version="1.2" desc="MSP432P401R_0" href="devices/msp432p401r.xml" id="MSP432P401R_0" xml="msp432p401r.xml" xmlpath="devices"/>
+            <device HW_revision="1" XML_version="1.2" description="ARM Cortex-M4F MCU" id="MSP432P401R_0" partnum="MSP432P401R">
+                    <router HW_revision="1.0" XML_version="1.2" description="CS_DAP Router" id="CS_DAP_0" isa="CS_DAP">
+                        <property Type="choicelist" Value="0" id="bypass"/>
+                    </router>
+                </device>
+            </platform>
+        </connection>
+    </configuration>
+</configurations>
