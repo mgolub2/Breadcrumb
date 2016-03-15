@@ -72,6 +72,10 @@
 UART_Handle uartPC = NULL;
 UART_Handle uartGSM = NULL;
 
+Void bossExcHandler(UInt *excStack, UInt lr) {
+	// do nothing
+}
+
 // constrant string macro for lazy people not wanting to count the length
 #define CSTR(str) str, sizeof(str)-1
 
