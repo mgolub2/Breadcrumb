@@ -38,9 +38,9 @@
 #define SERVER_PORT 8080 
 #define SSID "MSP432_Breadcrumb2"
 #define PASSWORD  "meepvista2" 
-#define SOCKET_WAIT_TIME 5000
+#define SOCKET_WAIT_TIME 7000
 #define MAX_CONN 3
-#define PACKET_SIZE 4096
+#define PACKET_SIZE 1024
 #define ATT_CHAR '\b'
 #define GSM_ATT_CHAR '\a'
 #define NUM_ATT_CHAR 3
@@ -67,6 +67,7 @@ void send_att_char() {
 
 void wifi_80_task(void *pvParameters) {
 	//MEMP_NUM_TCP_PCB = 5;
+	printf("Struct size: %d\n", sizeof(packet));
 	//espconn_tcp_set_max_con(5); //supress max connection notices.
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
 	//espconn_tcp_set_max_con(5);
@@ -114,11 +115,13 @@ void wifi_80_task(void *pvParameters) {
     	//netconn_write(client, fuck, strlen(fuck), NETCONN_COPY);
     	//char rec_char;
     	packet * msg;
+    	printf("---%lu left in queue---\n", uxQueueMessagesWaiting(*incoming_queue));
     	while(xQueueReceive( *incoming_queue, &msg, SOCKET_WAIT_TIME/portTICK_RATE_MS )) {
-    		//printf("--Recieved packet with %d size---\n", msg->written);
+    		printf("---Packet size: %d---\n", msg->written);
     		netconn_write(client, msg->data, msg->written, NETCONN_COPY);
     		//netconn_write(client, &rec_char, sizeof(char), NETCONN_COPY); 
     	}
+    	xQueueReset(*incoming_queue);
 		netconn_close(client);
     	while((err = netconn_delete(client)) != ERR_OK) {
     		printf("---Can't close connection: %d---\n", err);
@@ -130,47 +133,57 @@ void wifi_80_task(void *pvParameters) {
 	}
 }
 
+const int ESC=27;
 
 void rx_task(void * pvParameters) {
-	uint8_t attention_count = 0;
+	uint8_t start = 0;
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
 	packet * msg;
 	msg = (packet *) malloc(sizeof(packet));
 	uint32_t packet_size = 0;
+	char last_char = NULL;
+	char last_last_char = 0xFF;
 	while(1) {
-		char rec_char = getchar();
-        if (rec_char == ATT_CHAR) {
-            attention_count++;
-            if(attention_count == NUM_ATT_CHAR*2) {
-                attention_count = 0;
+		char rec_char = uart_getc(0);
+		//printf("%c", rec_char);
+		if (rec_char == ESC) {
+			printf("---packet size---: %d\n", packet_size);
+			start = 0;
+			if( packet_size != 0) {
+        		msg->written = packet_size;
+        		packet_size = 0;
+        		xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
+        		//xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
+        		free(msg);
+        		msg = (packet *) malloc(sizeof(packet));
+        		printf("---Sent partial packet: %d\n", msg->written);
             }
+		}
+
+        if (rec_char == ATT_CHAR && last_char == ATT_CHAR && last_last_char == ATT_CHAR) {
+        	printf("---Starting packet save---\n");
+        	start = 1;
         }
-        else {
-            if (attention_count >= NUM_ATT_CHAR && attention_count < NUM_ATT_CHAR*2) {
-            	//xQueueSend(*incoming_queue, &rec_char, 100/portTICK_RATE_MS);
-            	if(packet_size < PACKET_SIZE) {
-            		msg->data[packet_size] = rec_char;
-            		packet_size++;
-            	}
-            	else{
-            		msg->written = packet_size;
-            		packet_size = 0;
-            		xQueueSend(*incoming_queue, &msg, 100/portTICK_RATE_MS);
-            		free(msg);
-            		msg = (packet *) malloc(sizeof(packet));
-            	}
-            }
-            else{
-            	if( packet_size != 0) {
-            		msg->written = packet_size;
-            		packet_size = 0;
-            		xQueueSend(*incoming_queue, &msg, 100/portTICK_RATE_MS);
-            		free(msg);
-            		msg = (packet *) malloc(sizeof(packet));
-            	}
-                attention_count = 0;
-            }
+
+        if (start) {
+        	if(packet_size < PACKET_SIZE) {
+        		msg->data[packet_size] = rec_char;
+        		packet_size++;
+        	}
+        	else{
+        		printf("---Sending full packet---\n");
+        		msg->written = packet_size;
+        		packet_size = 0;
+        		xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
+        		free(msg);
+        		msg = (packet *) malloc(sizeof(packet));
+        	}
         }
+        //vTaskDelay(1000/portTICK_RATE_MS);
+        //printf("%c:%c:%c\n", rec_char, last_char, last_last_char);
+        last_last_char = last_char;
+        last_char = rec_char;
+
 	}
 }
 
@@ -228,9 +241,9 @@ void user_init(void)
     	printf("Setting up wifi...");
     };
     printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
-    incoming_queue = xQueueCreate( 1000, sizeof(packet *));
+    incoming_queue = xQueueCreate( 5, sizeof(packet *));
     xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 2, NULL);
-    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 2, NULL);
+    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 10, NULL);
     printf("---User init complete!---\n");
 }
 

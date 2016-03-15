@@ -8,6 +8,7 @@ import re
 import traceback
 import sys
 import subprocess
+import time
 
 PORT = '/dev/cu.usbserial-FTZ29WSV'
 #PORT = 'COM3'
@@ -52,13 +53,20 @@ def parse(data, serial_socket):
             if host == "192.168.1.1:8080":
                 with open('hackaday.txt', 'r') as d:
                     data = d.read(100)
+                    serial_socket.write('\b\b\b'.encode('utf-8'))
                     while data:
-                        serial_socket.write('\b\b\b{0}\b\b\b'.format(data.encode('utf-8')))
+                        serial_socket.write(data.encode('utf-8'))
                         data = d.read(100)
+                        if chr(27).encode() in data.encode():
+                            print("OH SHIT")
+                        print(len(data))
+                        time.sleep(.1)
+                        #print(data)
+                    serial_socket.write(chr(27).encode())
                     #serial_socket.write('\b\b\b{0}\b\b\b'.format(d.read()).encode('utf-8'))
             else:
                 rx_data = subprocess.check_output(['curl', '-i', host])
-                serial_socket.write('\b\b\b{0}\b\b\b'.format(rx_data))
+                serial_socket.write('\b\b\b{0}\b\b\b'.format(rx_data).encode('utf-8'))
         #with open('hackaday.txt', 'r') as d:
         #    serial_socket.write('==={0}==='.format(d.read()).encode('utf-8'))
     except Exception as e:
