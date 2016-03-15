@@ -29,27 +29,33 @@ def loop():
     with serial.Serial(PORT, BAUD) as serial_socket:
         pound_count = 0
         data = ''
+        start = 0
         while True:
             #Read a character at a time.
             #Yes this is awful and terrible
             new_data = serial_socket.read(1)
             try:
                 decode_data = new_data.decode('ascii')
-                print(decode_data, end="")
+                #print(decode_data, end="")
+
                 if decode_data:
                     if decode_data == '\a':
                         pound_count += 1
+                        if pound_count >= 3:
+                            start = 1
                         print(pound_count)
-                        if pound_count == 6:
-                            print("***Parsing data!!!****")
-                            parse(data, serial_socket)
-                            pound_count = 0
-                            data = ''
                     else:
-                        if pound_count >= 3 < 6:
+                        pound_count = 0
+                    if decode_data == '\b':
+                        print("***Parsing data!!!****")
+                        start = 0
+                        print(data)
+                        parse(data, serial_socket)
+                        pound_count = 0
+                        data = ''
+                    else:
+                        if start:
                             data += decode_data
-                        else:
-                            pound_count = 0
             except UnicodeDecodeError:
                     pass
 
@@ -67,7 +73,7 @@ def parse(data, serial_socket):
         host_match = re.search('Host: (\S+)\\r\\n', data)
         if host_match:
             host = host_match.group(1)
-            print(host)
+            #print(host)
             try:
                 host, port = host.split()
             except ValueError:

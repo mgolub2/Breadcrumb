@@ -71,7 +71,7 @@ void wifi_80_task(void *pvParameters) {
 	//espconn_tcp_set_max_con(5);
 	printf("---Handle in wifi 80: %p---\n", incoming_queue);
 	if (incoming_queue == 0) {
-		printf("---Failed to create queue!---");
+		printf("---Failed to create queue---");
 	}
 	struct netconn *nc = netconn_new (NETCONN_TCP);
 	if(!nc) {
@@ -219,7 +219,7 @@ void configure_wifi() {
 }
 
 //queue used to pass data from uart_rx -> wifi_80_task
-static xQueueHandle s_incoming_queue;
+static xQueueHandle incoming_queue;
 
 /*
  * Start everything up!
@@ -232,11 +232,10 @@ void user_init(void)
 	while(!sdk_wifi_set_opmode(SOFTAP_MODE)){
     	printf("Setting up wifi...");
     };
-    printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
     incoming_queue = xQueueCreate( 4, sizeof(packet *));
     xTaskCreate(heap_mon, (signed char *) "heap_mon", 256, NULL, 2, NULL);
-    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &s_incoming_queue, 4, NULL);
-    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&s_incoming_queue, 13, NULL);
-    printf("---User init complete!---\n");
+    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 4, NULL);
+    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 13, NULL);
+    printf("---User init complete---\n");
 }
 
