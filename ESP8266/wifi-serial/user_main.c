@@ -1,27 +1,17 @@
-/*
- * ESPRSSIF MIT License
+/* esp-open-rtos based project to print TCP data to the serial port, then 
+ * send responses from the breadcrumb chain to the client device. 
  *
- * Copyright (c) 2015 <ESPRESSIF SYSTEMS (SHANGHAI) PTE LTD>
+ * Author: Maximilian Golub
  *
- * Permission is hereby granted for use on ESPRESSIF SYSTEMS ESP8266 only, in which case,
- * it is free of charge, to any person obtaining a copy of this software and associated
- * documentation files (the "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the Software is furnished
- * to do so, subject to the following conditions:
+ * Uses tasks to keep everything working together nicely. UART is _not_ intterupt
+ * based.  
  * 
- * The above copyright notice and this permission notice shall be included in all copies or
- * substantial portions of the Software.
- * 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
- * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
- * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
+ * Uses the lwip netconn library, since sockets seem to make the ESP8266 sad.
+ * Lots of things make the ESP8266 sad, like to many clients, requests, dirty looks,
+ * and power that is not conditioned by the highest end audophile equitment. 
  */
 
+//So many incluuudddesss
 #include <espressif/esp_common.h>
 #include <FreeRTOS.h>
 #include <task.h>
@@ -34,6 +24,7 @@
 #include <netbuf_helpers.h>
 #include <string.h>
 
+//So many defffinnesss
 #define SERVER_IP "192.168.1.1"
 #define SERVER_PORT 8080 
 #define SSID "MSP432_Breadcrumb2"
@@ -45,13 +36,13 @@
 #define GSM_ATT_CHAR '\a'
 #define NUM_ATT_CHAR 3
 
+//Struct used to pass data from uart rx task to wifi/netconn task
 typedef struct {
 	char data[PACKET_SIZE];
-	uint32_t written;
+	uint32_t written; //amount of space actually used in the data array
 } packet;
 
-
-//void rx_task(void *pvParameters);
+//prototypes for functions
 void wifi_80_task(void *pvParameters);
 void rx_task(void *pvParameters);
 void configure_wifi();
@@ -59,6 +50,7 @@ void user_init(void);
 void send_att_char();
 void heap_mon(void * pvParameters);
 
+//Helper function to send three of the attention chars
 void send_att_char() {
 	uint8_t char_inc;
 	for (char_inc = 0; char_inc < NUM_ATT_CHAR; char_inc++) {
@@ -66,6 +58,11 @@ void send_att_char() {
     }
 }
 
+/*
+ * Handles the netconn connection setup and handling of clients
+ * Binds and listens on port 8080 by default. Waits to recieve 
+ * data from a TCP client.  
+ */
 void wifi_80_task(void *pvParameters) {
 	//MEMP_NUM_TCP_PCB = 5;
 	printf("Struct size: %d\n", sizeof(packet));
@@ -86,12 +83,12 @@ void wifi_80_task(void *pvParameters) {
 	printf("---Bound, starting listen...---\n");
 	netconn_listen(nc);
 	printf("---Listening...---\n");
-  		
+  	//Loop forever!	
 	while(1) {
 		struct netconn *client = NULL;
-    	err_t err = netconn_accept(nc, &client);
-    	printf("---Ack connection...---\n");
-    	if ( err != ERR_OK ) {
+    	err_t err = netconn_accept(nc, &client); //Do we have friends
+    	printf("---Ack connection...---\n"); //friends!
+    	if ( err != ERR_OK ) { //MEAN friends
       		if(client) {
       			printf("---ERROR!!:: %d---\n", err);
 				netconn_delete(client);
@@ -101,6 +98,7 @@ void wifi_80_task(void *pvParameters) {
     	struct netbuf *netbuf;
     	send_att_char();
     	netconn_set_recvtimeout(client, 1000/portTICK_RATE_MS);
+    	//Get data from our friends/clients
     	while((err = netconn_recv(client, &netbuf)) == ERR_OK) {
     		uint16_t len = netbuf_len(netbuf);
 	        uint16_t offset;
@@ -108,20 +106,13 @@ void wifi_80_task(void *pvParameters) {
 	        	putchar(netbuf_read_u8(netbuf, offset));
         	}
     	}
-    	//putchar(ATT_CHAR);
-    	send_att_char();
-    	//char buf[80];
-    	//snprintf(buf, sizeof(buf), "Free heap %d bytes\r\n", (int)xPortGetFreeHeapSize());
-    	//netconn_write(client, buf, strlen(buf), NETCONN_NOCOPY);
-    	//char fuck[] = "fuck you\n"; 
-    	//netconn_write(client, fuck, strlen(fuck), NETCONN_COPY);
-    	//char rec_char;
+    	putchar(ATT_CHAR);
     	packet * msg;
     	printf("---%lu left in queue---\n", uxQueueMessagesWaiting(*incoming_queue));
+    	//Block on waiting for data from down the chain, sent to us from UART RX
     	while(xQueueReceive( *incoming_queue, &msg, SOCKET_WAIT_TIME/portTICK_RATE_MS )) {
     		printf("---Packet size: %d---\n", msg->written);
     		netconn_write(client, msg->data, msg->written, NETCONN_COPY);
-    		//netconn_write(client, &rec_char, sizeof(char), NETCONN_COPY); 
     	}
     	xQueueReset(*incoming_queue);
 		netconn_close(client);
@@ -129,14 +120,13 @@ void wifi_80_task(void *pvParameters) {
     		printf("---Can't close connection: %d---\n", err);
     		vTaskDelay(1000/portTICK_RATE_MS);
     	}
-    	//netbuf_free(netbuf);
     	netbuf_delete(netbuf);
-    	//vTaskDelay(10000/portTICK_RATE_MS);
 	}
 }
 
 const int ESC=27;
 
+//Print out heap stats every now and then. 
 void heap_mon(void * pvParameters) {
 	while(1) {
 		printf("---Free heap %d bytes---\n", (int)xPortGetFreeHeapSize());
@@ -144,7 +134,11 @@ void heap_mon(void * pvParameters) {
 	}
 }
 
-
+/*
+ * Wait around for the UART to get data so we can check it for chars
+ * indicating an incoming tcp datastream from down the chain. 
+ * Sends that data to the wifi_80 task. 
+ */
 void rx_task(void * pvParameters) {
 	uint8_t start = 0;
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
@@ -163,7 +157,6 @@ void rx_task(void * pvParameters) {
         		msg->written = packet_size;
         		packet_size = 0;
         		xQueueSend(*incoming_queue, &msg, 7000/portTICK_RATE_MS);
-        		//xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
         		free(msg);
         		msg = (packet *) malloc(sizeof(packet));
         		printf("---Sent partial packet: %d\n", msg->written);
@@ -189,29 +182,17 @@ void rx_task(void * pvParameters) {
         		msg = (packet *) malloc(sizeof(packet));
         	}
         }
-        //vTaskDelay(1000/portTICK_RATE_MS);
-        //printf("%c:%c:%c\n", rec_char, last_char, last_last_char);
+        //Set the variables we use to check for three of the att char in a row
         last_last_char = last_char;
         last_char = rec_char;
 
 	}
 }
 
-
+/*
+ * Setup and configure the esp8266 WIFI how we like it
+ */
 void configure_wifi() {
-	
-	//sdk_wifi_set_opmode(SOFTAP_MODE);
-
-	//struct sdk_softap_config *config = (struct sdk_softap_config *)calloc(1, sizeof(struct sdk_softap_config));
-
-  	//sdk_wifi_softap_get_config(config);
-  	//sprintf(config->ssid, (uint8_t) SSID);
-  	//sprintf(config->password, (uint8_t) PASSWORD);
-  	//config->authmode = AUTH_WPA_WPA2_PSK;
-  	//config->ssid_len =  (uint8_t) strlen(SSID);
-  	//config->max_connection = 4;
-
-
     struct sdk_softap_config ap_config = {
         .ssid = SSID,
         .ssid_hidden = 0,
@@ -224,7 +205,6 @@ void configure_wifi() {
     };
 
     sdk_wifi_softap_set_config(&ap_config);
-    //ree(config);
 
     dhcpserver_stop();
     struct ip_info ap_ip;
@@ -238,12 +218,14 @@ void configure_wifi() {
     dhcpserver_start(&first_client_ip, 2);
 }
 
-static xQueueHandle incoming_queue;
+//queue used to pass data from uart_rx -> wifi_80_task
+static xQueueHandle s_incoming_queue;
 
-
+/*
+ * Start everything up!
+ */
 void user_init(void)
 {
-	//system_set_os_print(0);
 	uart_set_baud(0, 115200);
 	printf("---Configuring WiFi---\n");
 	configure_wifi();
@@ -253,8 +235,8 @@ void user_init(void)
     printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
     incoming_queue = xQueueCreate( 4, sizeof(packet *));
     xTaskCreate(heap_mon, (signed char *) "heap_mon", 256, NULL, 2, NULL);
-    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 4, NULL);
-    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 13, NULL);
+    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &s_incoming_queue, 4, NULL);
+    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&s_incoming_queue, 13, NULL);
     printf("---User init complete!---\n");
 }
 
