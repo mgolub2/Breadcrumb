@@ -57,6 +57,7 @@ void rx_task(void *pvParameters);
 void configure_wifi();
 void user_init(void);
 void send_att_char();
+void heap_mon(void * pvParameters);
 
 void send_att_char() {
 	uint8_t char_inc;
@@ -107,6 +108,7 @@ void wifi_80_task(void *pvParameters) {
 	        	putchar(netbuf_read_u8(netbuf, offset));
         	}
     	}
+    	//putchar(ATT_CHAR);
     	send_att_char();
     	//char buf[80];
     	//snprintf(buf, sizeof(buf), "Free heap %d bytes\r\n", (int)xPortGetFreeHeapSize());
@@ -135,6 +137,14 @@ void wifi_80_task(void *pvParameters) {
 
 const int ESC=27;
 
+void heap_mon(void * pvParameters) {
+	while(1) {
+		printf("---Free heap %d bytes---\n", (int)xPortGetFreeHeapSize());
+		vTaskDelay(10000/portTICK_RATE_MS);
+	}
+}
+
+
 void rx_task(void * pvParameters) {
 	uint8_t start = 0;
 	xQueueHandle * incoming_queue = (xQueueHandle *)pvParameters;
@@ -152,7 +162,7 @@ void rx_task(void * pvParameters) {
 			if( packet_size != 0) {
         		msg->written = packet_size;
         		packet_size = 0;
-        		xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
+        		xQueueSend(*incoming_queue, &msg, 7000/portTICK_RATE_MS);
         		//xQueueSend(*incoming_queue, &msg, 1000/portTICK_RATE_MS);
         		free(msg);
         		msg = (packet *) malloc(sizeof(packet));
@@ -241,9 +251,10 @@ void user_init(void)
     	printf("Setting up wifi...");
     };
     printf("---SDK version:%s---\n", sdk_system_get_sdk_version());
-    incoming_queue = xQueueCreate( 5, sizeof(packet *));
-    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 2, NULL);
-    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 10, NULL);
+    incoming_queue = xQueueCreate( 4, sizeof(packet *));
+    xTaskCreate(heap_mon, (signed char *) "heap_mon", 256, NULL, 2, NULL);
+    xTaskCreate(rx_task, (signed char *) "rx_task", 2048, &incoming_queue, 4, NULL);
+    xTaskCreate(wifi_80_task, (signed char *) "wifi_80_task", 4096,&incoming_queue, 13, NULL);
     printf("---User init complete!---\n");
 }
 
