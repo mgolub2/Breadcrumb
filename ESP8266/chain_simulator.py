@@ -1,5 +1,9 @@
+#!/usr/local/bin/python3.5
 """
-Simulate the chain parsing and replying to a http request
+Author: Maximilian Golub
+
+Simulate the chain parsing and replying to a http request to test
+the ESP8266
 """
 
 import serial
@@ -10,19 +14,25 @@ import sys
 import subprocess
 import time
 
-PORT = '/dev/cu.usbserial-FTZ29WSV'
-#PORT = 'COM3'
+PORT = '/dev/cu.usbserial-FTZ29WSV' #OSX
+#PORT = 'COM3' # If on windows
 BAUD = 115200
 
 
 def loop():
+    """
+    Loop that runs forever, reading from the
+    serial connection waiting for special sequences indicating
+    TCP data.
+    :return:
+    """
     with serial.Serial(PORT, BAUD) as serial_socket:
         pound_count = 0
         data = ''
         while True:
-            #bytes_to_read = serial_socket.inWaiting()
-            new_data = serial_socket.read(1)#read(bytes_to_read)
-            #print(len(new_data))
+            #Read a character at a time.
+            #Yes this is awful and terrible
+            new_data = serial_socket.read(1)
             try:
                 decode_data = new_data.decode('ascii')
                 print(decode_data, end="")
@@ -40,11 +50,19 @@ def loop():
                             data += decode_data
                         else:
                             pound_count = 0
-                    #print(decode_data, end="")
             except UnicodeDecodeError:
                     pass
 
+
 def parse(data, serial_socket):
+    """
+    Parse the data coming over the serial connection. The data should
+    be the GET/POST whatever request from the Wifi device attached to the
+    ESP8266. Looks for the Host header, trys to get the host+port with regex.
+    :param data:
+    :param serial_socket:
+    :return:
+    """
     try:
         host_match = re.search('Host: (\S+)\\r\\n', data)
         if host_match:
@@ -54,39 +72,34 @@ def parse(data, serial_socket):
                 host, port = host.split()
             except ValueError:
                 port = 80
-            if host == "192.168.1.1:8080":
+            if host == "192.168.1.1:8080": # Special case to test basic functionality level.
                 with open('hackaday.txt', 'r') as d:
                     data = d.read(100)
                     serial_socket.write('\b\b\b'.encode('utf-8'))
-                    #serial_socket.flushOutput()
                     while data:
                         serial_socket.write(data.encode('utf-8'))
-                        #serial_socket.flushOutput()
                         data = d.read(100)
                         if chr(27).encode() in data.encode():
                             print("OH SHIT")
-                        print(len(data))
                         time.sleep(.01)
-                        #print(data)
                     serial_socket.write(chr(27).encode())
-                    #serial_socket.flushOutput()
-                    #serial_socket.write('\b\b\b{0}\b\b\b'.format(d.read()).encode('utf-8'))
-            else:
+            else: #Connect a socket as a client, then return that over the uart.
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
+                s.settimeout(5)
                 s.connect((host, int(port)))
                 totalsent = 0
-                while totalsent < len(data):
+                while totalsent < len(data): #Send all of our data
                     sent = s.send(data[totalsent:].encode())
                     if sent == 0:
                         raise RuntimeError("socket connection broken")
                     totalsent = totalsent + sent
-                result = s.recv(10000)
+                result = s.recv(100) #Recieve data in 100 byte chunks, just like the special case.
                 if result:
-                    serial_socket.write('\b\b\b'.encode('utf-8'))
+                    serial_socket.write('\b\b\b'.encode('utf-8')) #Write special start code sequence
                 while (len(result) > 0):
                     serial_socket.write(result)
-                    result = s.recv(10000)
+                    time.sleep(.01) #Keep the ESP8266 from sploding
+                    result = s.recv(100)
                 serial_socket.write(chr(27).encode())
                 s.close()
     except Exception as e:
