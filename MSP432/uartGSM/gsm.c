@@ -39,6 +39,7 @@
 #include <xdc/cfg/global.h>
 #include <xdc/runtime/System.h>
 #include <xdc/runtime/Error.h>
+#include <ti/sysbios/hal/Hwi.h>
 
 /* BIOS Header files */
 #include <ti/sysbios/BIOS.h>
@@ -56,6 +57,8 @@
 
 #include "gsm.h"
 
+//#define DEBUG 1
+
 #define CTRLZ "\032"
 #define ESC "\033"
 #define CR "\015"
@@ -66,12 +69,13 @@
 #define CR_C '\015'
 #define LF_C '\012'
 
+UART_Handle uartPC = NULL;
+UART_Handle uartGSM = NULL;
+
 // constrant string macro for lazy people not wanting to count the length
 #define CSTR(str) str, sizeof(str)-1
 
-//volatile int commandModeOn = 0;
-
-#define PC_MAX_CMD_LEN 256
+#define PC_MAX_CMD_LEN 128
 volatile char pcCmd[PC_MAX_CMD_LEN] = { 0 };
 volatile unsigned pcCmdLen = 0;
 // True if the result was truncated in the response buffer
@@ -154,14 +158,14 @@ void gsmReadTimeoutIsr(UArg arg) {
 		Timer_stop(gsmReadTimer);
 }
 
-inline int gsmReadTimedout(int timeout_ms) {
+int gsmReadTimedout(int timeout_ms) {
 	if (timeout_ms < 0)
 		return 0;
 
 	return gsmReadTimeout >= timeout_ms;
 }
 
-inline void gsmReadTimeoutReset() {
+void gsmReadTimeoutReset() {
 	gsmReadTimeout = 0;
 }
 
@@ -175,13 +179,38 @@ void gsmResTimeoutIsr(UArg arg) {
 		Timer_stop(gsmResTimer);
 }
 
-inline int gsmResTimedout() {
+int gsmResTimedout() {
 	return gsmResTimeout >= GSM_RES_MAX_TIMEOUT ;
 }
 
-inline void gsmResTimeoutReset() {
+void gsmResTimeoutReset() {
 	gsmResTimeout = 0;
 }
+
+//Timer_Handle uartReadTimer;
+//int lastRead = 1;
+//void uartReadTimerIsr(UArg arg) {
+//	char input[32];
+//	int len = 0;
+//
+//	if (lastRead == 1) {
+//		if (UART_control(uartPC, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS) {
+//			if (len > 0)
+//				UART_read(uartPC, &input, len);
+//		} else {
+//			UART_read(uartPC, &input, 1);
+//		}
+//		lastRead = 0;
+//	} else {
+//		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS) {
+//			if (len > 0)
+//				UART_read(uartGSM, &input, len);
+//		} else {
+//			UART_read(uartPC, &input, 1);
+//		}
+//		lastRead = 1;
+//	}
+//}
 
 /********* TIMER TIMEOUTS END ***********/
 
@@ -190,62 +219,130 @@ inline void gsmResTimeoutReset() {
 int32_t gsmLastFour = ('\r' << 8) | '\n';
 int32_t gsmCmdSeparator = ('\r' << 24) | ('\n' << 16) | ('\r' << 8) | '\n'; 
 int32_t gsmCmdSeparatorData = ('\r' << 24) | ('\n' << 16) | ('>' << 8) | ' '; 
+int32_t gsmCmdSeparatorDataOK = ('>' << 24) | (' ' << 16) | ('\r' << 8) | '\n';
 int32_t gsmCmdSeparatorTimeout = ('\r' << 8) | '\n';
 int32_t gsmCmdSeparatorTimeoutFlag = 0xFFFF;
 
-#define GSM_MAX_RES_LEN 256
-volatile char gsmRes[GSM_MAX_RES_LEN] = { 0 };
-volatile unsigned gsmResLen = 0;
-volatile unsigned gsmResTrunc = 0;
+#define GSM_MAX_RES_LEN 4096
 
-int gsmResponseReady() {
-	return (gsmLastFour == gsmCmdSeparatorData || (gsmResTimedout() && ((gsmLastFour & gsmCmdSeparatorTimeoutFlag) == gsmCmdSeparatorTimeout))) && gsmResLen > 0;
-}
-
-void clearGSMResponse() {
-	gsmResLen = 0;
-	gsmResTrunc = 0;
-}
-
+// this serves as a fake queue
 #define GSM_RES_RING_LEN 4
 volatile int resRingStart = 0;
-volatile int resRingStop = 0;
+volatile int resRingStop = 3;
 char resRing[GSM_RES_RING_LEN][GSM_MAX_RES_LEN];
-unsigned resLenRing[GSM_RES_RING_LEN];
+unsigned resLenRing[GSM_RES_RING_LEN] = {0, 0, 0, 2};
+#define CUR_GSM_RES_LEN resLenRing[resRingStop]
 
+// send a command to the GSM module
+void cmdGSM(char *cmd, unsigned cmdlen) {
+	resRingStart = (resRingStop + 1) % GSM_RES_RING_LEN;
+	resLenRing[resRingStart] = 0;
+
+#ifdef DEBUG
+	UART_writePolling(uartPC, cmd, cmdlen);
+	UART_writePolling(uartPC, "\r\n", 2);
+#endif
+
+	UART_writePolling(uartGSM, cmd, cmdlen);
+	UART_writePolling(uartGSM, CR, 1);
+}
+
+// send a data to the GSM
+void dataGSM(char *data, unsigned datalen) {
+	resRingStart = (resRingStop + 1) % GSM_RES_RING_LEN;
+	resLenRing[resRingStart] = 0;
+
+#ifdef DEBUG
+	UART_writePolling(uartPC, data, datalen);
+	UART_writePolling(uartPC, "\r\n", 2);
+#endif
+
+	UART_writePolling(uartGSM, data, datalen);
+	UART_writePolling(uartGSM, CTRLZ, 1);
+}
+
+int gsmResponseReady() {
+	if (resRingStart == resRingStop) {
+		if ((gsmLastFour == gsmCmdSeparatorData || (gsmResTimedout() && ((gsmLastFour & gsmCmdSeparatorTimeoutFlag) == gsmCmdSeparatorTimeout))) && CUR_GSM_RES_LEN > 0) {
+			if (gsmLastFour != gsmCmdSeparatorData)
+				CUR_GSM_RES_LEN -= 2;
+
+			resRingStop = (resRingStop + 1) % GSM_RES_RING_LEN;
+			CUR_GSM_RES_LEN = 0;
+			gsmResTimeoutReset();
+			return 1;
+		}
+
+		return 0;
+	}
+
+	return resLenRing[resRingStart] != 0;
+}
+
+//volatile char dataReady = '\0';
+volatile int dataReady = 0;
+volatile int dataReadyPrint = -1;
 void parseGSMResponse(void *buf, size_t count) {
 	Timer_stop(gsmResTimer);
-	gsmResTimeoutReset();
+	//UInt hwi = Hwi_disable();
 
-	char *gsmRes = resRingStop
+	char *gsmRes = resRing[resRingStop];
+
+	//UART_writePolling(uartPC, buf, count);
 
 	int processed = 0;
 	while (processed < count) {
 		char cur = ((char *) buf)[processed];
 		
-		if (gsmLastFour == gsmCmdSeparator || gsmLastFour == gsmCmdSeparatorData)
-			clearGSMResponse();
+		if (gsmLastFour == gsmCmdSeparator || gsmLastFour == gsmCmdSeparatorDataOK) {
+			// new response
+			if (gsmLastFour == gsmCmdSeparator) {
+				if (CUR_GSM_RES_LEN >= 4)
+					CUR_GSM_RES_LEN -= 4;
+				else
+					CUR_GSM_RES_LEN -= 2;
+			} else if (gsmLastFour == gsmCmdSeparatorDataOK) {
+				CUR_GSM_RES_LEN -= 2;
+			}
+
+			gsmRes[CUR_GSM_RES_LEN] = '\0';
+			if (!strncmp(gsmRes, CSTR("+STCPD:"))) {
+				//dataReady = gsmRes[sizeof("+STCPD:")-1];
+				dataReady++;
+			}else if (!strncmp(gsmRes, CSTR("+SDATA:")) || !strncmp(gsmRes, CSTR("+SSTR:"))) {
+				//dataReadyPrint = resRingStop;
+				dataReadyPrint++;
+			}
+
+			// don't even worry about clobbering the start, very unlikely
+			resRingStop = (resRingStop + 1) % GSM_RES_RING_LEN;
+			CUR_GSM_RES_LEN = 0;
+
+			gsmRes = resRing[resRingStop];
+		}
 
 		gsmLastFour <<= 8;
 		gsmLastFour |= (int32_t)cur;
 
 		// copy
-		if (gsmResLen == GSM_MAX_RES_LEN - 1)
-			gsmResTrunc = 1;
-
-		gsmRes[gsmResLen] = cur;
-		gsmResLen++;
+		if (CUR_GSM_RES_LEN < GSM_MAX_RES_LEN) {
+			gsmRes[CUR_GSM_RES_LEN] = cur;
+			CUR_GSM_RES_LEN++;
+		}
 
 		processed++;
 	}
 
-	gsmRes[gsmResLen] = '\0';
+	gsmRes[CUR_GSM_RES_LEN] = '\0';
+	gsmResTimeoutReset();
+	//Hwi_restore(hwi);
 	Timer_start(gsmResTimer);
 }
 /********* GSM RESPONSE PARSING END ***********/
 
 // res MUST have length = GSM_MAX_RES_LEN
 // returns -1 on a timeout
+volatile int ok = 0;
 int waitForGSMResponse(char *res, int timeout_ms) {
 	char input[32];
 
@@ -255,35 +352,44 @@ int waitForGSMResponse(char *res, int timeout_ms) {
 		if (gsmReadTimedout(timeout_ms)) {
 			Timer_stop(gsmReadTimer);
 			gsmReadTimeoutReset();
-			//clearGSMResponse();
+
 			if (res != NULL)
 				res[0] = '\0';
-
+#ifdef DEBUG
 			UART_writePolling(uartPC, CSTR("GSM read timeout\r\n"));
+#endif
 			return -1;
 		}
 
+		// do a read
 		int len;
-		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS)
-			UART_read(uartGSM, &input, len);
-		else
+		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS) {
+			if (len > 0)
+				UART_read(uartGSM, &input, len);
+		} else {
 			UART_read(uartGSM, &input, 1);
+		}
 	}
 	Timer_stop(gsmReadTimer);
 
+	unsigned gsmResLen = resLenRing[resRingStart];
+	char *gsmRes = resRing[resRingStart];
+
+#ifdef DEBUG
+	UART_writePolling(uartPC, gsmRes, gsmResLen);
+	UART_writePolling(uartPC, "\r\n", 2);
+#endif
 	if (res != NULL) {
-		// exclude the \r\n when possible (every time except data entry)
-		if (gsmResLen > 2) {
-			// we don't just have \r\n, but rather \r\n\0
-			strncpy(res, (const char *) gsmRes, gsmResLen - 2);
-			res[gsmResLen-1] = '\0';
-		} else {
-			strncpy(res, (const char *) gsmRes, gsmResLen);
-			res[gsmResLen] = '\0';
-		}
+		strncpy(res, (const char *) gsmRes, gsmResLen);
+		res[gsmResLen] = '\0';
 	}
 
-	//clearGSMResponse();
+	if (!strncmp(gsmRes, CSTR("OK")))
+		ok++;
+
+	resLenRing[resRingStart] = 0;
+	resRingStart = (resRingStart + 1) % GSM_RES_RING_LEN;
+
 	return 0;
 }
 
@@ -291,7 +397,6 @@ int waitForGSMResponse(char *res, int timeout_ms) {
 void gsmReadUARTCallback(UART_Handle handle, void *buf, size_t count) {
 	if (count != UART_ERROR && count > 0) {
 		// Write the data to the PC
-		UART_writePolling(uartPC, buf, count);
 		parseGSMResponse(buf, count);
 	}
 }
@@ -331,24 +436,6 @@ int setupUART() {
 	return 0;
 }
 
-// send a command to the GSM module
-void cmdGSM(char *cmd, unsigned cmdlen) {
-	clearGSMResponse();
-	UART_writePolling(uartPC, cmd, cmdlen);
-	UART_writePolling(uartPC, "\r\n", 2);
-	UART_writePolling(uartGSM, cmd, cmdlen);
-	UART_writePolling(uartGSM, CR, 1);
-}
-
-// send a data to the GSM
-void dataGSM(char *data, unsigned datalen) {
-	clearGSMResponse();
-	UART_writePolling(uartPC, data, datalen);
-	UART_writePolling(uartPC, "\r\n", 2);
-	UART_writePolling(uartGSM, data, datalen);
-	UART_writePolling(uartGSM, CTRLZ, 1);
-}
-
 #define CMD_F_NONE 0
 #define CMD_F_EAT_OK 1
 #define CMD_F_CMP_N 2
@@ -357,9 +444,10 @@ void dataGSM(char *data, unsigned datalen) {
 #define CMD_VERIFY_TIMEDOUT (int)(1 << 9)
 // lengths don't include the null terminator
 // Returns the strcmp result of the received response vs the expected response
+char gsmRes[GSM_MAX_RES_LEN] = { 0 };
 int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen,
 		int timeout_ms, unsigned flags) {
-	char res[GSM_MAX_RES_LEN] = { 0 };
+	char *res = gsmRes;
 
 	if (cmd != NULL) {
 		if (flags & CMD_F_DATA)
@@ -387,16 +475,22 @@ int cmdVerifyResponse(char *cmd, unsigned cmdlen, char *expect, unsigned explen,
 #define CMD_GSM_VERIFY(cmd, expect, timeout_ms, flags) cmdVerifyResponse(CSTR(cmd), CSTR(expect), timeout_ms, flags)
 
 // cmd, expect, and error_print must be const strings
+#ifdef DEBUG
 #define CMD_GSM_RET_ON_FAILURE(cmd, expect, timeout_ms, flags, error_print) \
 	if (CMD_GSM_VERIFY(cmd, expect, timeout_ms, flags)) { \
 		UART_writePolling(uartPC, CSTR(error_print)); \
 		return -1; \
 	}
+#else
+#define CMD_GSM_RET_ON_FAILURE(cmd, expect, timeout_ms, flags, error_print) \
+	if (CMD_GSM_VERIFY(cmd, expect, timeout_ms, flags)) \
+		return -1;
+#endif
 
 // returns 1 when the gsm is ready to communicate, else 0
 // if it's booting, it will wait until boot is complete and it is ready
 int gsmReady() {
-	char res[GSM_MAX_RES_LEN] = { 0 };
+	char *res = gsmRes;
 
 	UART_writePolling(uartPC, CSTR("Checking if GSM exists\r\n"));
 
@@ -411,12 +505,13 @@ int gsmReady() {
 		return CMD_GSM_VERIFY("AT+SIND=1023", "OK", 1000, CMD_F_NONE)
 			!= CMD_VERIFY_TIMEDOUT ;
 
-	// TODO: have a timeout here and if times out, try to communicate once more
 	UART_writePolling(uartPC, CSTR("GSM currently booting, waiting for +SIND: 4\r\n"));
+	int maxTries = 5;
 	do {
-		if (!strncmp(res, CSTR("+SIND")) && res[7] == '4')
+		if (!strncmp(res, CSTR("+SIND: 4")))
 			return 1;
-	} while (!waitForGSMResponse(res, 5000));
+		maxTries--;
+	} while (maxTries > 0 && !waitForGSMResponse(res, 5000));
 
 	// +SIND: 4 on boot timed out, but the GSM *should* exist on this node, so do one last check
 	return CMD_GSM_VERIFY("AT+SIND=1023", "OK", 3000, CMD_F_NONE) != CMD_VERIFY_TIMEDOUT;
@@ -424,7 +519,7 @@ int gsmReady() {
 
 #define HOST "breadnet"
 int setupGSM() {
-	char res[GSM_MAX_RES_LEN] = {0};
+	char *res = gsmRes;
 
 	UART_writePolling(uartPC, CSTR("Initializing GSM Connection\r\n"));
 
@@ -449,6 +544,9 @@ int setupGSM() {
 	cmdGSM(CSTR("AT+CGDCONT?"));
 	if (waitForGSMResponse(res, 1000))
 		return -1;
+
+	// OK
+	waitForGSMResponse(NULL, 1000);
 
 	unsigned n = 0;
 	while (n < GSM_MAX_RES_LEN && !strncmp(res+n, CSTR("+CGDCONT:"))) {
@@ -496,18 +594,26 @@ int setupTimers() {
 	gsmReadTimer = Timer_create(Timer_ANY, gsmReadTimeoutIsr, &timerParams,
 			&eb);
 
-	// 2.22ms timeout (amount of time to fill up the 32 byte ring buffer
+	// 2.222ms timeout (amount of time to fill up the 32 byte ring buffer
 	// on the msp432 UART at 115200 baud (excluding start/stop bits, so
 	// there's some error). However if we're hitting this timeout then
 	// the ring buffer is about to cycle and realistically it's too
 	// late to do a read and not lose data
 	timerParams.startMode = Timer_StartMode_USER;
-	timerParams.period = 2222;
+	timerParams.period = 4444;
 	timerParams.periodType = Timer_PeriodType_MICROSECS;
 	timerParams.arg = 1;
 
 	gsmResTimer = Timer_create(Timer_ANY, gsmResTimeoutIsr, &timerParams,
 			&eb);
+
+//	timerParams.startMode = Timer_StartMode_AUTO;
+//	timerParams.period = 200;
+//	timerParams.periodType = Timer_PeriodType_MICROSECS;
+//	timerParams.arg = 1;
+
+//	uartReadTimer = Timer_create(Timer_ANY, uartReadTimerIsr, &timerParams,
+//			&eb);
 
 	return gsmReadTimer == NULL || gsmResTimer == NULL;
 }
@@ -531,6 +637,7 @@ int gsmUARTReconfig() {
 	return 0;
 }
 
+/********* ITOA START ***********/
 /* reverse:  reverse string s in place */
 void reverse(char s[]) {
 	int i, j;
@@ -559,20 +666,63 @@ void itoa(int n, char s[]) {
 	s[i] = '\0';
 	reverse(s);
 }
+/********* ITOA END ***********/
 
+#define MAX_HOST_LEN 255
 int requestGET() {
 	char *data = "GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n";
+	//char *data = "GET / HTTP/1.1\r\nHost: retro.hackaday.com\r\n\r\n";
 
-	UART_writePolling(uartPC, CSTR("Connecting to Google\r\n"));
+	char *host = data;
+	while (strncmp(host, CSTR("Host: ")))
+		host++;
+	host += sizeof("Host: ")-1;
+	char *hostend = host;
+	while (*hostend != '\r')
+		hostend++;
+	int hostlen = hostend - host;
 
-	if (CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", 3000, CMD_F_EAT_OK | CMD_F_CMP_N)) {
-		CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80",
-				"OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE, "TCP configuration failed\r\n");
+#define startsize sizeof("AT+SDATACONF=1,\"TCP\",\"")-1
+#define endsize sizeof("\",80") - 1
+#define hostconlen startsize + MAX_HOST_LEN + endsize + 1
+	char hostcon[hostconlen] = "AT+SDATACONF=1,\"TCP\",\"";
+	if (hostlen > MAX_HOST_LEN)
+		return -1;
+
+	strncpy(hostcon+startsize, host, hostlen);
+	strncpy(hostcon+startsize+hostlen, CSTR("\",80"));
+	hostcon[startsize+hostlen+endsize] = '\0';
+
+	//UART_writePolling(uartPC, CSTR("Connecting to Google\r\n"));
+	UART_writePolling(uartPC, CSTR("Connecting to "));
+	UART_writePolling(uartPC, host, hostlen);
+	UART_writePolling(uartPC, CSTR("\r\n"));
+
+	if (!CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", 3000, CMD_F_EAT_OK | CMD_F_CMP_N)) {
+		UART_writePolling(uartPC, CSTR("Closing previous connection\r\n"));
 		CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
-				"TCP connect failed\r\n");
-		// wait until we're actually connected
-		while (CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1,0102", 3000, CMD_F_EAT_OK | CMD_F_CMP_N));
+						"TCP connect failed\r\n");
+		CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,0", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+						"TCP disconnect failed\r\n");
 	}
+
+	// connect
+	if (cmdVerifyResponse(hostcon, startsize+hostlen+endsize, CSTR("OK"), GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE)) {
+#ifdef DEBUG
+		UART_writePolling(uartPC, CSTR("TCP configuration failed\r\n"));
+#endif
+		return -1;
+	}
+	//CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80",
+	//CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"retro.hackaday.com\",80",
+	//		"OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE, "TCP configuration failed\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+			"TCP connect failed\r\n");
+	CMD_GSM_RET_ON_FAILURE("AT+SDATARXMD=1,0", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
+			"Setting read mode failed failed\r\n");
+	// wait until we're actually connected
+	while (CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1,0102", 3000, CMD_F_EAT_OK | CMD_F_CMP_N));
+	// connected!
 
 	// get the length of the data, as both an int and string
 	int datalen = strlen(data);
@@ -594,9 +744,39 @@ int requestGET() {
 		return -1;
 	}
 
-	CMD_GSM_RET_ON_FAILURE(NULL, "+STCPD:1", 10000, CMD_F_NONE, "No data response\r\n");
-	
-	cmdGSM(CSTR("AT+SDATATREAD=1"));
+//	char *res = gsmRes;
+//	while (1) {
+//		cmdGSM(CSTR("AT+SDATAREAD=1"));
+//		if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
+//			break;
+//
+//		if (!strcmp(res, "+STCPD:1") || !strcmp(res, "OK"))
+//			if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
+//				break;
+//
+//		if (!strcmp(res, "+STCPD:1") || !strcmp(res, "OK"))
+//			if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
+//				break;
+//	}
+
+//	while (1) {
+//		if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
+//			break;
+//
+//		if (!strcmp(res, "+STCPD:1"))
+//			cmdGSM(CSTR("AT+SDATAREAD=1"));
+//
+//		//if(!strncmp(res, CSTR("+SSTR:1,"))) {
+//			//UART_writePolling(uartPC, res+sizeof("+SSTR:1,")-1, strlen(res)-(sizeof("+SSTR:1,")-1));
+//		//}
+//	}
+
+
+//	cmdGSM(CSTR("AT+SDATASTATUS=1"));
+//	waitForGSMResponse(res, 3000);
+//	UART_writePolling(uartPC, res, strlen(res));
+
+	UART_writePolling(uartPC, CSTR("\r\nData reading done\r\n"));
 
 	return 0;
 }
@@ -611,6 +791,9 @@ void executePCCmd(char *cmd, int cmdlen) {
 		} else if (!strcmp(cmd, "s")) {
 			if (setupGSM())
 				UART_writePolling(uartPC, CSTR("Failed to setup GSM\r\n"));
+		} else if (!strcmp(cmd, "r")) {
+			cmdGSM(CSTR("AT+SDATAREAD=1"));
+			waitForGSMResponse(NULL, 3000);
 		} else if (!strcmp(cmd, "g")) {
 			if (requestGET())
 				UART_writePolling(uartPC, CSTR("GET attempt failed\r\n"));
@@ -625,8 +808,14 @@ void executePCCmd(char *cmd, int cmdlen) {
 		} else if (!strcmp(cmd, CTRLZ)) {
 			UART_writePolling(uartGSM, CSTR(CTRLZ));
 		} else if (!strcmp(cmd, "n")) {
-			CMD_GSM_VERIFY("AT+SDATASTATUS=1", "+SOCKSTATUS:  1,1", 3000,
-					CMD_F_NONE | CMD_F_CMP_N);
+			cmdGSM(CSTR("AT+SDATASTATUS=1"));
+			waitForGSMResponse(gsmRes, 3000);
+			UART_writePolling(uartPC, gsmRes, strlen(gsmRes));
+		} else if (!strcmp(cmd, "q")) {
+			cmdGSM(CSTR("AT+CSQ"));
+			waitForGSMResponse(gsmRes, 3000); // response
+			UART_writePolling(uartPC, gsmRes, strlen(gsmRes));
+			waitForGSMResponse(NULL, 3000); // ok
 		} else {
 			UART_writePolling(uartPC, CSTR("Unknown PC command\r\n"));
 		}
@@ -634,17 +823,20 @@ void executePCCmd(char *cmd, int cmdlen) {
 		cmd++;
 		UART_writePolling(uartGSM, cmd, cmdlen-1);
 		UART_writePolling(uartGSM, "\r\n", 2);
+		waitForGSMResponse(NULL, 5000);
 	} else {
 		UART_writePolling(uartPC, CSTR("Unknown command snuck through\r\n"));
 	}
 }
+
 
 void gsmTask(UArg arg0, UArg arg1) {
 	char input[32];
 	int len;
 
 	int timerFail = setupTimers();
-	while(setupUART()) ;
+
+	while (setupUART()) ;
 
 	if (timerFail)
 		UART_writePolling(uartPC, CSTR("Failed to create timer\r\n"));
@@ -671,5 +863,63 @@ void gsmTask(UArg arg0, UArg arg1) {
 			executePCCmd((char *)pcCmd, pcCmdLen);
 			clearPCCmd();
 		}
+
+		//char *cmd = "AT+SDATAREAD=0";
+		//int cmdlen = sizeof("AT+SDATAREAD=0") - 1;
+//		if (dataReady != '\0') {
+//			cmdGSM(CSTR("AT+SDATAREAD=1"));
+//			dataReady = '\0';
+//		}
+		gsmRes[0] = '\0';
+		int ret = 0;
+		if (dataReady) {
+			cmdGSM(CSTR("AT+SDATAREAD=1"));
+
+			while (!dataReadyPrint && !ret) {
+				ret = waitForGSMResponse(gsmRes, 5000); // Data
+			}
+
+			ret = 0;
+			while (strncmp(gsmRes, CSTR("+SDATA")) && strncmp(gsmRes, CSTR("+SSTR")) && !ret)
+				ret = waitForGSMResponse(gsmRes, 5000); // Data
+
+			ret = 0;
+			while (!ok && !ret)
+				ret = waitForGSMResponse(NULL, 5000); // OK or notifications
+			ok--;
+
+			char *start = gsmRes;
+			if (!strncmp(start, CSTR("+SDATA"))) {
+				start += sizeof("+SDATA:1,") - 1;
+				while (*(start++) != ',') ;
+			} else if (!strncmp(start, CSTR("+SSTR"))) {
+				start += sizeof("+SSTR:1,") - 1;
+			} else {
+				continue;
+			}
+
+			int len = strlen(start);
+			if (start+len >= gsmRes+GSM_MAX_RES_LEN)
+				continue;
+			UART_writePolling(uartPC, start, len);
+
+			dataReady--;
+			gsmRes[0] = '\0';
+		}
+//
+//		if (dataReadyPrint != -1) {
+//			char *start = resRing[dataReadyPrint];
+//			if (!strncmp(start, CSTR("+SDATA"))) {
+//				start += sizeof("+SDATA:1,") - 1;
+//				while (*(start++) != ',') ;
+//			} else {
+//				start += sizeof("+SSTR:1,") - 1;
+//			}
+//
+//			int len = resLenRing[dataReadyPrint]-(int)(start-resRing[dataReadyPrint]);
+//			//UART_writePolling(uartPC, start, len);
+//
+//			dataReadyPrint = -1;
+//		}
 	}
 }

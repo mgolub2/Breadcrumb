@@ -51,6 +51,8 @@
 
 #include <stdint.h>
 
+#include "gsm.h"
+
 
 /*
  *  ======== main ========

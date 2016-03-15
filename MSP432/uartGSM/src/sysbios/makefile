@@ -1,13 +1,13 @@
 vpath % /opt/ti/tirtos_msp43x_2_16_00_08/products/bios_6_45_01_29/packages/ti/sysbios/
 vpath %.c /opt/ti/xdctools_3_32_00_06_core/packages/
 
-CCOPTS    = -mcpu=cortex-m4 -march=armv7e-m -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__MSP432P401R__ -DTARGET_IS_FALCON -Dgcc -D_POSIX_SOURCE -DMSP432WARE -I"/opt/ti/ccsv6/ccs_base/arm/include" -I"/opt/ti/ccsv6/ccs_base/arm/include/CMSIS" -I"/home/david/ccs_workspace/uartGSM" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/inc/CMSIS" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/inc" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/driverlib/MSP432P4xx" -I"/opt/ti/ccsv6/tools/compiler/gcc-arm-none-eabi-4_8-2014q3/arm-none-eabi/include" -O2 -ffunction-sections -fdata-sections -g -gstrict-dwarf    -Wunused -Wunknown-pragmas -ffunction-sections -fdata-sections  -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mabi=aapcs -g  -O3  -I/opt/ti/tirtos_msp43x_2_16_00_08/products/bios_6_45_01_29/packages/gnu/targets/arm//libs/install-native/$(GCCTARG)/include -Dfar= -D__DYNAMIC_REENT__   -Dti_sysbios_knl_Task_minimizeLatency__D=FALSE -Dti_sysbios_knl_Clock_stopCheckNext__D=FALSE -Dti_sysbios_family_arm_m3_Hwi_enableException__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_disablePriority__D=32U -Dti_sysbios_family_arm_m3_Hwi_numSparseInterrupts__D=0U
+CCOPTS    = -mcpu=cortex-m4 -march=armv7e-m -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__MSP432P401R__ -DTARGET_IS_FALCON -Dgcc -D_POSIX_SOURCE -DMSP432WARE -I"/opt/ti/ccsv6/ccs_base/arm/include" -I"/opt/ti/ccsv6/ccs_base/arm/include/CMSIS" -I"/home/david/ccs_workspace/uartGSM" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/inc/CMSIS" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/inc" -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/msp432_driverlib_3_10_00_09/driverlib/MSP432P4xx" -I"/opt/ti/ccsv6/tools/compiler/gcc-arm-none-eabi-4_8-2014q3/arm-none-eabi/include" -O3 -ffunction-sections -fdata-sections -g -gstrict-dwarf    -Wunused -Wunknown-pragmas -ffunction-sections -fdata-sections  -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mabi=aapcs -g  -O3  -I/opt/ti/tirtos_msp43x_2_16_00_08/products/bios_6_45_01_29/packages/gnu/targets/arm//libs/install-native/$(GCCTARG)/include -Dfar= -D__DYNAMIC_REENT__   -Dti_sysbios_knl_Task_minimizeLatency__D=FALSE -Dti_sysbios_knl_Clock_stopCheckNext__D=FALSE -Dti_sysbios_family_arm_m3_Hwi_enableException__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_disablePriority__D=32U -Dti_sysbios_family_arm_m3_Hwi_numSparseInterrupts__D=0U
 
 XDC_ROOT  = /opt/ti/xdctools_3_32_00_06_core/packages/
 
 BIOS_ROOT = /opt/ti/tirtos_msp43x_2_16_00_08/products/bios_6_45_01_29/packages/ti/sysbios/
 
-BIOS_DEFS =  -Dti_sysbios_BIOS_swiEnabled__D=TRUE -Dti_sysbios_BIOS_taskEnabled__D=TRUE -Dti_sysbios_BIOS_clockEnabled__D=TRUE -Dti_sysbios_BIOS_runtimeCreatesEnabled__D=TRUE -Dti_sysbios_hal_Hwi_DISABLE_ALL_HOOKS -Dti_sysbios_knl_Swi_DISABLE_ALL_HOOKS -Dti_sysbios_BIOS_smpEnabled__D=FALSE -Dti_sysbios_Build_useHwiMacros -Dti_sysbios_knl_Swi_numPriorities__D=16 -Dti_sysbios_knl_Task_deleteTerminatedTasks__D=FALSE -Dti_sysbios_knl_Task_numPriorities__D=16 -Dti_sysbios_knl_Task_checkStackFlag__D=TRUE -Dti_sysbios_knl_Task_initStackFlag__D=TRUE -Dti_sysbios_knl_Clock_TICK_SOURCE=ti_sysbios_knl_Clock_TickSource_TIMER -Dti_sysbios_knl_Clock_TICK_MODE=ti_sysbios_knl_Clock_TickMode_PERIODIC -Dti_sysbios_hal_Core_delegate_getId=ti_sysbios_hal_CoreNull_getId__E -Dti_sysbios_hal_Core_delegate_interruptCore=ti_sysbios_hal_CoreNull_interruptCore__E -Dti_sysbios_hal_Core_delegate_lock=ti_sysbios_hal_CoreNull_lock__E -Dti_sysbios_hal_Core_delegate_unlock=ti_sysbios_hal_CoreNull_unlock__E -Dti_sysbios_hal_Core_numCores__D=1 -Dti_sysbios_hal_CoreNull_numCores__D=1 -Dti_sysbios_utils_Load_taskEnabled__D=FALSE -Dti_sysbios_utils_Load_swiEnabled__D=FALSE -Dti_sysbios_utils_Load_hwiEnabled__D=FALSE -Dti_sysbios_family_arm_m3_Hwi_dispatcherSwiSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherTaskSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherAutoNestingSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherIrpTrackingSupport__D=TRUE -Dti_sysbios_knl_Semaphore_supportsEvents__D=FALSE -Dti_sysbios_knl_Semaphore_supportsPriority__D=FALSE
+BIOS_DEFS =  -Dti_sysbios_BIOS_swiEnabled__D=TRUE -Dti_sysbios_BIOS_taskEnabled__D=TRUE -Dti_sysbios_BIOS_clockEnabled__D=TRUE -Dti_sysbios_BIOS_runtimeCreatesEnabled__D=TRUE -Dti_sysbios_hal_Hwi_DISABLE_ALL_HOOKS -Dti_sysbios_knl_Swi_DISABLE_ALL_HOOKS -Dti_sysbios_BIOS_smpEnabled__D=FALSE -Dti_sysbios_Build_useHwiMacros -Dti_sysbios_knl_Swi_numPriorities__D=16 -Dti_sysbios_knl_Task_deleteTerminatedTasks__D=FALSE -Dti_sysbios_knl_Task_numPriorities__D=16 -Dti_sysbios_knl_Task_checkStackFlag__D=TRUE -Dti_sysbios_knl_Task_initStackFlag__D=TRUE -Dti_sysbios_knl_Clock_TICK_SOURCE=ti_sysbios_knl_Clock_TickSource_TIMER -Dti_sysbios_knl_Clock_TICK_MODE=ti_sysbios_knl_Clock_TickMode_PERIODIC -Dti_sysbios_hal_Core_delegate_getId=ti_sysbios_hal_CoreNull_getId__E -Dti_sysbios_hal_Core_delegate_interruptCore=ti_sysbios_hal_CoreNull_interruptCore__E -Dti_sysbios_hal_Core_delegate_lock=ti_sysbios_hal_CoreNull_lock__E -Dti_sysbios_hal_Core_delegate_unlock=ti_sysbios_hal_CoreNull_unlock__E -Dti_sysbios_hal_Core_numCores__D=1 -Dti_sysbios_hal_CoreNull_numCores__D=1 -Dti_sysbios_utils_Load_taskEnabled__D=TRUE -Dti_sysbios_utils_Load_swiEnabled__D=FALSE -Dti_sysbios_utils_Load_hwiEnabled__D=FALSE -Dti_sysbios_family_arm_m3_Hwi_dispatcherSwiSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherTaskSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherAutoNestingSupport__D=TRUE -Dti_sysbios_family_arm_m3_Hwi_dispatcherIrpTrackingSupport__D=TRUE -Dti_sysbios_knl_Semaphore_supportsEvents__D=FALSE -Dti_sysbios_knl_Semaphore_supportsPriority__D=FALSE -Dxdc_runtime_Assert_DISABLE_ALL -Dxdc_runtime_Log_DISABLE_ALL
 
 BIOS_INC  = -I"/opt/ti/tirtos_msp43x_2_16_00_08/products/bios_6_45_01_29/packages/"
 
@@ -70,9 +70,6 @@ knl_Idle.o: knl/Idle.c makefile
 knl_Intrinsics.o: knl/Intrinsics.c makefile
 	@-$(call RM, knl_Intrinsics.o)
 	$(COMPILE) -o knl_Intrinsics.o
-knl_Event.o: knl/Event.c makefile
-	@-$(call RM, knl_Event.o)
-	$(COMPILE) -o knl_Event.o
 knl_Queue.o: knl/Queue.c makefile
 	@-$(call RM, knl_Queue.o)
 	$(COMPILE) -o knl_Queue.o
@@ -109,12 +106,6 @@ m3_Hwi.o: family/arm/m3/Hwi.c makefile
 m3_TaskSupport.o: family/arm/m3/TaskSupport.c makefile
 	@-$(call RM, m3_TaskSupport.o)
 	$(COMPILE) -o m3_TaskSupport.o
-m3_Timer.o: family/arm/m3/Timer.c makefile
-	@-$(call RM, m3_Timer.o)
-	$(COMPILE) -o m3_Timer.o
-m3_TimestampProvider.o: family/arm/m3/TimestampProvider.c makefile
-	@-$(call RM, m3_TimestampProvider.o)
-	$(COMPILE) -o m3_TimestampProvider.o
 gnu_ReentSupport.o: rts/gnu/ReentSupport.c makefile
 	@-$(call RM, gnu_ReentSupport.o)
 	$(COMPILE) -o gnu_ReentSupport.o
@@ -127,12 +118,6 @@ gates_GateMutex.o: gates/GateMutex.c makefile
 heaps_HeapMem.o: heaps/HeapMem.c makefile
 	@-$(call RM, heaps_HeapMem.o)
 	$(COMPILE) -o heaps_HeapMem.o
-utils_Load.o: utils/Load.c makefile
-	@-$(call RM, utils_Load.o)
-	$(COMPILE) -o utils_Load.o
-utils_Load_CPU.o: utils/Load_CPU.c makefile
-	@-$(call RM, utils_Load_CPU.o)
-	$(COMPILE) -o utils_Load_CPU.o
 msp432_Timer.o: family/arm/msp432/Timer.c makefile
 	@-$(call RM, msp432_Timer.o)
 	$(COMPILE) -o msp432_Timer.o
@@ -140,7 +125,7 @@ msp432_ClockFreqs.o: family/arm/msp432/ClockFreqs.c makefile
 	@-$(call RM, msp432_ClockFreqs.o)
 	$(COMPILE) -o msp432_ClockFreqs.o
 
-sysbios.am4fg: m3_Hwi_asm_gnu.o m3_Hwi_asm_switch_gnu.o m3_IntrinsicsSupport_asm_gnu.o m3_TaskSupport_asm_gnu.o _BIOS.o knl_Clock.o knl_Idle.o knl_Intrinsics.o knl_Event.o knl_Queue.o knl_Semaphore.o knl_Swi.o knl_Swi_andn.o knl_Task.o hal_Hwi.o hal_Hwi_stack.o hal_Hwi_startup.o hal_Timer.o init_Boot.o m3_Hwi.o m3_TaskSupport.o m3_Timer.o m3_TimestampProvider.o gnu_ReentSupport.o gates_GateHwi.o gates_GateMutex.o heaps_HeapMem.o utils_Load.o utils_Load_CPU.o msp432_Timer.o msp432_ClockFreqs.o
+sysbios.am4fg: m3_Hwi_asm_gnu.o m3_Hwi_asm_switch_gnu.o m3_IntrinsicsSupport_asm_gnu.o m3_TaskSupport_asm_gnu.o _BIOS.o knl_Clock.o knl_Idle.o knl_Intrinsics.o knl_Queue.o knl_Semaphore.o knl_Swi.o knl_Swi_andn.o knl_Task.o hal_Hwi.o hal_Hwi_stack.o hal_Hwi_startup.o hal_Timer.o init_Boot.o m3_Hwi.o m3_TaskSupport.o gnu_ReentSupport.o gates_GateHwi.o gates_GateMutex.o heaps_HeapMem.o msp432_Timer.o msp432_ClockFreqs.o
 	@echo arm4fg $^ ...
 	@-$(call RM, $@)
 	@$(AR) $@ $^
