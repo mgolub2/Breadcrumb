@@ -73,10 +73,11 @@ def parse(data, serial_socket):
                     #serial_socket.write('\b\b\b{0}\b\b\b'.format(d.read()).encode('utf-8'))
             else:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1)
                 s.connect((host, int(port)))
                 totalsent = 0
                 while totalsent < len(data):
-                    sent = s.send(data[totalsent:])
+                    sent = s.send(data[totalsent:].encode())
                     if sent == 0:
                         raise RuntimeError("socket connection broken")
                     totalsent = totalsent + sent
@@ -84,7 +85,7 @@ def parse(data, serial_socket):
                 if result:
                     serial_socket.write('\b\b\b'.encode('utf-8'))
                 while (len(result) > 0):
-                    serial_socket.write(result.encode())
+                    serial_socket.write(result)
                     result = s.recv(10000)
                 serial_socket.write(chr(27).encode())
                 s.close()
