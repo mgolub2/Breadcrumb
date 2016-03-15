@@ -81,6 +81,7 @@ extern "C" {
 
 #define Board_UART0                 MSP_EXP432P401R_UARTA0
 #define Board_UART1                 MSP_EXP432P401R_UARTA2
+#define Board_UART3                 MSP_EXP432P401R_UARTA3
 
 #define Board_WATCHDOG0             MSP_EXP432P401R_WATCHDOG
 

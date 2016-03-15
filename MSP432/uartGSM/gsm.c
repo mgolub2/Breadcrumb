@@ -191,31 +191,6 @@ void gsmResTimeoutReset() {
 	gsmResTimeout = 0;
 }
 
-//Timer_Handle uartReadTimer;
-//int lastRead = 1;
-//void uartReadTimerIsr(UArg arg) {
-//	char input[32];
-//	int len = 0;
-//
-//	if (lastRead == 1) {
-//		if (UART_control(uartPC, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS) {
-//			if (len > 0)
-//				UART_read(uartPC, &input, len);
-//		} else {
-//			UART_read(uartPC, &input, 1);
-//		}
-//		lastRead = 0;
-//	} else {
-//		if (UART_control(uartGSM, UART_CMD_GETRXCOUNT, (void *)&len) == UART_STATUS_SUCCESS) {
-//			if (len > 0)
-//				UART_read(uartGSM, &input, len);
-//		} else {
-//			UART_read(uartPC, &input, 1);
-//		}
-//		lastRead = 1;
-//	}
-//}
-
 /********* TIMER TIMEOUTS END ***********/
 
 /********* GSM RESPONSE PARSING START ***********/
@@ -417,7 +392,7 @@ int setupUART() {
 		uartPCParams.writeDataMode = UART_DATA_BINARY;
 		uartPCParams.readDataMode = UART_DATA_BINARY;
 		uartPCParams.baudRate = 115200;
-		uartPC = UART_open(Board_UART0, &uartPCParams);
+		uartPC = UART_open(Board_UART3, &uartPCParams);
 
 		if (uartPC == NULL)
 			return -1;
@@ -611,14 +586,6 @@ int setupTimers() {
 	gsmResTimer = Timer_create(Timer_ANY, gsmResTimeoutIsr, &timerParams,
 			&eb);
 
-//	timerParams.startMode = Timer_StartMode_AUTO;
-//	timerParams.period = 200;
-//	timerParams.periodType = Timer_PeriodType_MICROSECS;
-//	timerParams.arg = 1;
-
-//	uartReadTimer = Timer_create(Timer_ANY, uartReadTimerIsr, &timerParams,
-//			&eb);
-
 	return gsmReadTimer == NULL || gsmResTimer == NULL;
 }
 
@@ -705,7 +672,6 @@ int requestGET() {
 	strncpy(hostcon+startsize+hostlen, CSTR("\",80"));
 	hostcon[startsize+hostlen+endsize] = '\0';
 
-	//UART_writePolling(uartPC, CSTR("Connecting to Google\r\n"));
 	UART_writePolling(uartPC, CSTR("Connecting to "));
 	UART_writePolling(uartPC, host, hostlen);
 	UART_writePolling(uartPC, CSTR("\r\n"));
@@ -725,9 +691,6 @@ int requestGET() {
 #endif
 		return -1;
 	}
-	//CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"www.google.com\",80",
-	//CMD_GSM_RET_ON_FAILURE("AT+SDATACONF=1,\"TCP\",\"retro.hackaday.com\",80",
-	//		"OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE, "TCP configuration failed\r\n");
 	CMD_GSM_RET_ON_FAILURE("AT+SDATASTART=1,1", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
 			"TCP connect failed\r\n");
 	CMD_GSM_RET_ON_FAILURE("AT+SDATARXMD=1,0", "OK", GSM_READ_DEFAULT_TIMEOUT_MS, CMD_F_NONE,
@@ -754,38 +717,6 @@ int requestGET() {
 		UART_writePolling(uartPC, CSTR("Entering data failed\r\n"));
 		return -1;
 	}
-
-//	char *res = gsmRes;
-//	while (1) {
-//		cmdGSM(CSTR("AT+SDATAREAD=1"));
-//		if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
-//			break;
-//
-//		if (!strcmp(res, "+STCPD:1") || !strcmp(res, "OK"))
-//			if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
-//				break;
-//
-//		if (!strcmp(res, "+STCPD:1") || !strcmp(res, "OK"))
-//			if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
-//				break;
-//	}
-
-//	while (1) {
-//		if (waitForGSMResponse(res, GSM_READ_MAX_TIMEOUT_MS))
-//			break;
-//
-//		if (!strcmp(res, "+STCPD:1"))
-//			cmdGSM(CSTR("AT+SDATAREAD=1"));
-//
-//		//if(!strncmp(res, CSTR("+SSTR:1,"))) {
-//			//UART_writePolling(uartPC, res+sizeof("+SSTR:1,")-1, strlen(res)-(sizeof("+SSTR:1,")-1));
-//		//}
-//	}
-
-
-//	cmdGSM(CSTR("AT+SDATASTATUS=1"));
-//	waitForGSMResponse(res, 3000);
-//	UART_writePolling(uartPC, res, strlen(res));
 
 	UART_writePolling(uartPC, CSTR("\r\nData reading done\r\n"));
 
@@ -853,10 +784,6 @@ void gsmTask(UArg arg0, UArg arg1) {
 		UART_writePolling(uartPC, CSTR("Failed to create timer\r\n"));
 	//	if (setupGSM())
 	//		UART_writePolling(uartPC, CSTR("Failed to setup GSM\r\n"));
-	//	if (gsmUARTReconfig())
-	//		UART_writePolling(uartPC, CSTR("Failed reconfigure GSM UART\r\n"));
-	//	if (requestGET())
-	//		UART_writePolling(uartPC, CSTR("GET attempt failed\r\n"));
 
 	while (1) {
 		// Read from all the UARTS
@@ -875,12 +802,6 @@ void gsmTask(UArg arg0, UArg arg1) {
 			clearPCCmd();
 		}
 
-		//char *cmd = "AT+SDATAREAD=0";
-		//int cmdlen = sizeof("AT+SDATAREAD=0") - 1;
-//		if (dataReady != '\0') {
-//			cmdGSM(CSTR("AT+SDATAREAD=1"));
-//			dataReady = '\0';
-//		}
 		gsmRes[0] = '\0';
 		int ret = 0;
 		if (dataReady) {
@@ -918,20 +839,5 @@ void gsmTask(UArg arg0, UArg arg1) {
 			dataReady--;
 			gsmRes[0] = '\0';
 		}
-//
-//		if (dataReadyPrint != -1) {
-//			char *start = resRing[dataReadyPrint];
-//			if (!strncmp(start, CSTR("+SDATA"))) {
-//				start += sizeof("+SDATA:1,") - 1;
-//				while (*(start++) != ',') ;
-//			} else {
-//				start += sizeof("+SSTR:1,") - 1;
-//			}
-//
-//			int len = resLenRing[dataReadyPrint]-(int)(start-resRing[dataReadyPrint]);
-//			//UART_writePolling(uartPC, start, len);
-//
-//			dataReadyPrint = -1;
-//		}
 	}
 }

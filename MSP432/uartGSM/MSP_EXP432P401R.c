@@ -510,7 +510,20 @@ const UARTMSP432_HWAttrs uartMSP432HWAttrs[MSP_EXP432P401R_UARTCOUNT] = {
         .baudrateLUT = uartMSP432Baudrates,
         .ringBufPtr  = uartMSP432RingBuffer[1],
         .ringBufSize = sizeof(uartMSP432RingBuffer[1])
-    }
+    },
+	{
+		.baseAddr = EUSCI_A3_BASE,
+		.intNum = INT_EUSCIA3,
+		.intPriority = (~0),
+		.clockSource = EUSCI_A_UART_CLOCKSOURCE_SMCLK,
+		.bitOrder = EUSCI_A_UART_LSB_FIRST,
+		.numBaudrateEntries = sizeof(uartMSP432Baudrates) /
+			sizeof(UARTMSP432_BaudrateConfig),
+		.baudrateLUT = uartMSP432Baudrates,
+		.ringBufPtr  = uartMSP432RingBuffer[2],
+		.ringBufSize = sizeof(uartMSP432RingBuffer[2])
+	}
+
 };
 
 const UART_Config UART_config[] = {
@@ -524,6 +537,11 @@ const UART_Config UART_config[] = {
         .object = &uartMSP432Objects[1],
         .hwAttrs = &uartMSP432HWAttrs[1]
     },
+	{
+		.fxnTablePtr = &UARTMSP432_fxnTable,
+		.object = &uartMSP432Objects[2],
+		.hwAttrs = &uartMSP432HWAttrs[2]
+	},
     {NULL, NULL, NULL}
 };
 
@@ -540,9 +558,14 @@ void MSP_EXP432P401R_initUART(void)
     MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P3,
         GPIO_PIN2 | GPIO_PIN3, GPIO_PRIMARY_MODULE_FUNCTION);
 
+    /* Set P9.6 & P9.7 in UART mode */
+    MAP_GPIO_setAsPeripheralModuleFunctionInputPin(GPIO_PORT_P9,
+        GPIO_PIN6 | GPIO_PIN7, GPIO_PRIMARY_MODULE_FUNCTION);
+
     /* Initialize the UART driver */
     UART_init();
 }
+
 
 /*
  *  =============================== Watchdog ===============================
